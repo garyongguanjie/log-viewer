@@ -314,14 +314,13 @@ function highlight(value) {
 function formatEmbeddedJson(message) {
   for (let start = 0; start < message.length; start += 1) {
     const opener = message[start];
-    if (opener !== "{" && opener !== "[") continue;
-    const closer = opener === "{" ? "}" : "]";
+    if (opener !== "{") continue;
+    const closer = "}";
     const end = message.lastIndexOf(closer);
     if (end <= start) continue;
     const candidate = message.slice(start, end + 1);
     const looksLikeObject = opener === "{" && /"(?:\\.|[^"\\])*"\s*:/.test(candidate);
-    const looksLikeArray = opener === "[" && (candidate.includes(",") || /^\[\s*[\[{\"]/.test(candidate));
-    if (!looksLikeObject && !looksLikeArray) continue;
+    if (!looksLikeObject) continue;
 
     let formatted = "";
     let indentation = 0;
@@ -344,7 +343,8 @@ function formatEmbeddedJson(message) {
       else if (character === ":") formatted += ": ";
       else if (!/\s/.test(character)) formatted += character;
     }
-    return `${message.slice(0, start)}${formatted}${message.slice(end + 1)}`;
+    const prefix = message.slice(0, start).trimEnd();
+    return `${prefix}${prefix ? "\n" : ""}${formatted}${message.slice(end + 1)}`;
   }
   return message;
 }
