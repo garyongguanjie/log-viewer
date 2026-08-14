@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Logscope | Large log viewer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Logscope home">LOG VIEWER</a>
+      <div class="file-status" id="fileStatus">No file loaded</div>
+      <label class="upload-button" for="fileInput">Open log <input id="fileInput" type="file" accept=".log,.txt,text/plain" /></label>
+    </header>
+
+    <section class="workbench" aria-label="Log viewer controls">
+      <div class="toolbar">
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-controls="settingsSidebar" aria-expanded="true" aria-label="Hide sidebar" title="Hide sidebar"><span></span><span></span><span></span></button>
+        <div class="search-wrap">
+          <span class="search-icon">/</span>
+          <input id="searchInput" type="search" placeholder="Search logs" autocomplete="off" />
+          <button class="toggle" id="caseToggle" type="button" title="Match case">Aa</button>
+          <button class="toggle" id="regexToggle" type="button" title="Use regular expression">.*</button>
+          <button class="icon-button" id="clearSearch" type="button" title="Clear search">x</button>
+        </div>
+        <div class="search-modes" aria-label="Search behavior">
+          <button id="jumpMode" class="search-mode active" type="button">Jump</button>
+          <button id="filterMode" class="search-mode" type="button">Filter</button>
+        </div>
+        <div class="search-navigation" aria-label="Search result navigation">
+          <button id="searchUp" type="button" title="Previous match (Shift+Enter)" aria-label="Previous match, Shift plus Enter shortcut">&uarr;</button>
+          <button id="searchDown" type="button" title="Next match (Enter)" aria-label="Next match, Enter shortcut">&darr;</button>
+        </div>
+        <div class="result-count" id="resultCount">Upload a file to begin</div>
+      </div>
+
+      <div class="workbench-body">
+        <aside class="sidebar" id="settingsSidebar" aria-label="Log settings">
+          <section class="sidebar-section">
+            <h2 class="sidebar-heading">APPLICATIONS</h2>
+            <div class="application-list" id="applicationFilters"><span class="application-placeholder">No applications</span></div>
+          </section>
+          <section class="sidebar-section parser-settings">
+            <div class="parser-heading"><h2 class="sidebar-heading">PARSER</h2><a href="parser-help.html" target="_blank" rel="noopener">Help</a></div>
+            <p>First capture group is used.</p>
+            <label>Split records <input id="splitPattern" value="\r?\n" spellcheck="false" /></label>
+            <label>Time <input id="timePattern" value="^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)" spellcheck="false" /></label>
+            <label>Level <input id="levelPattern" value="\b(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\b" spellcheck="false" /></label>
+            <label>App / logger <input id="appPattern" value="---\s+\[[^\]]+\]\s+([^\s:]+)\s*:" spellcheck="false" /></label>
+            <label>Message <input id="messagePattern" value="---\s+\[[^\]]+\]\s+[^\s:]+\s*:\s*(.*)$" spellcheck="false" /></label>
+            <label class="wrap-setting"><input id="wrapToggle" type="checkbox" checked /> Wrap message text</label>
+            <label class="wrap-setting"><input id="formatJsonToggle" type="checkbox" /> Format embedded JSON</label>
+            <span class="pattern-error" id="patternError" role="alert"></span>
+            <button id="reparseButton" type="button">Apply parser</button>
+            <label class="config-label" for="parserConfig">Pasteable parser config</label>
+            <textarea id="parserConfig" class="parser-config" rows="6" spellcheck="false"></textarea>
+            <div class="config-actions"><button id="importParserConfig" type="button">Import &amp; apply</button><button id="copyParserConfig" type="button">Copy current</button></div>
+          </section>
+        </aside>
+        <div class="sidebar-resize" id="sidebarResize" role="separator" aria-label="Resize sidebar" aria-orientation="vertical" tabindex="0"></div>
+
+        <div class="log-pane">
+          <div class="filters">
+            <div class="filter-group"><span class="filter-label">LEVEL</span><div id="levelFilters" class="chips"></div></div>
+          </div>
+          <div class="log-table" id="logViewport" tabindex="0" aria-label="Parsed log records">
+            <div class="table-head"><span class="column-heading">APP NAME<i class="resize-handle" data-resize="app" aria-hidden="true"></i></span><span class="column-heading time-heading">TIME<button id="timeSortToggle" class="sort-arrow active" type="button" title="Sorted ascending" aria-label="Sorted ascending">&uarr;</button><i class="resize-handle" data-resize="time" aria-hidden="true"></i></span><span class="column-heading">LEVEL<i class="resize-handle" data-resize="level" aria-hidden="true"></i></span><span class="column-heading">MESSAGE<i class="resize-handle" data-resize="message" aria-hidden="true"></i></span></div>
+            <div class="empty-state" id="emptyState" hidden></div>
+            <div class="virtual-space" id="virtualSpace" hidden><div class="virtual-rows" id="virtualRows"></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <template id="rowTemplate"><div class="log-row"><span class="app-cell"></span><time class="time-cell"></time><span class="level-cell"></span><span class="message-cell"></span></div></template>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Log Viewer Parser Help</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="help-body">
+  <header class="help-topbar"><strong>LOG VIEWER</strong><a href="index.html">Back to viewer</a></header>
+  <main class="help-page">
+    <h1>Parser Configuration Guide</h1>
+    <p class="help-lead">Give an LLM a few representative log records and the contract below. Paste its five-line response into <strong>Pasteable parser config</strong>, then select <strong>Import &amp; apply</strong>.</p>
+
+    <section class="help-card">
+      <h2>Configuration Contract</h2>
+      <ul>
+        <li>The configuration has exactly five entries: <code>split</code>, <code>time</code>, <code>level</code>, <code>app</code>, and <code>message</code>.</li>
+        <li>Each entry is written on one line as <code>name=regex source</code>.</li>
+        <li>Values are JavaScript regular-expression sources. Do not surround them with <code>/</code> delimiters and do not add flags.</li>
+        <li>The first capture group, group 1, is the extracted column value.</li>
+        <li>The split expression separates records and must not match an empty string.</li>
+        <li>Backslashes must be returned literally. This is plain text, not JSON, so do not double-escape them.</li>
+        <li>Every expression must stay on one physical line.</li>
+        <li>Return only the five configuration lines, without Markdown fences or explanations.</li>
+      </ul>
+    </section>
+
+    <section class="help-card">
+      <h2>Prompt For An LLM</h2>
+      <p>Replace the sample section with several real records, including unusual records and errors. Redact secrets before sharing logs with an external service.</p>
+      <textarea class="prompt-template" id="llmPrompt" rows="24" readonly>You are generating parser settings for a browser log viewer.
+
+CONTRACT
+- Return exactly five lines named split, time, level, app, and message.
+- Format every line as name=JavaScript regex source.
+- Do not use /regex/ delimiters or regex flags.
+- Keep every regex on one physical line.
+- Group 1 must contain the value to extract for time, level, app, and message.
+- split separates complete log records and must not match an empty string.
+- Preserve backslashes literally because this format is plain text, not JSON.
+- Return no Markdown fences, comments, or explanation.
+- Prefer specific patterns that do not accidentally match colons inside timestamps or messages.
+
+EXPECTED RESPONSE SHAPE
+split=...
+time=...(capture time)...
+level=...(capture level)...
+app=...(capture application or logger)...
+message=...(capture message)...
+
+SAMPLE LOGS
+Paste 3 to 10 representative log records here.</textarea>
+      <button class="help-copy" id="copyPrompt" type="button">Copy prompt</button>
+    </section>
+
+    <section class="help-card">
+      <h2>Spring Boot Example</h2>
+      <p>Input record:</p>
+      <pre>2026-08-15 10:00:00.590  WARN 18420 --- [http-nio-8080-exec-2] com.example.payments.PaymentClient : Gateway response={"status":429}</pre>
+      <p>Pasteable configuration:</p>
+      <pre>split=\r?\n
+time=^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)
+level=\b(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\b
+app=---\s+\[[^\]]+\]\s+([^\s:]+)\s*:
+message=---\s+\[[^\]]+\]\s+[^\s:]+\s*:\s*(.*)$</pre>
+      <table class="help-table">
+        <thead><tr><th>Column</th><th>Extracted value</th></tr></thead>
+        <tbody><tr><td>Time</td><td>2026-08-15 10:00:00.590</td></tr><tr><td>Level</td><td>WARN</td></tr><tr><td>App</td><td>com.example.payments.PaymentClient</td></tr><tr><td>Message</td><td>Gateway response={"status":429}</td></tr></tbody>
+      </table>
+    </section>
+
+    <section class="help-card">
+      <h2>Troubleshooting</h2>
+      <dl><dt>The message starts inside the timestamp</dt><dd>The message regex is too broad. Anchor it to a separator near the logger and capture only after that separator.</dd><dt>Columns show a dash</dt><dd>The expression did not match, or group 1 is missing.</dd><dt>Records are split unexpectedly</dt><dd>Make the split expression match only record boundaries. For one-record-per-line logs, use <code>\r?\n</code>.</dd><dt>Import fails</dt><dd>Remove Markdown fences and ensure each required name and regex share one line.</dd></dl>
+    </section>
+  </main>
+  <script>
+    document.getElementById("copyPrompt").addEventListener("click", async (event) => {
+      const prompt = document.getElementById("llmPrompt");
+      try { await navigator.clipboard.writeText(prompt.value); event.currentTarget.textContent = "Copied"; }
+      catch { prompt.select(); document.execCommand("copy"); event.currentTarget.textContent = "Copied"; }
+    });
+  </script>
+</body>
+</html>
