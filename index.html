@@ -43,18 +43,17 @@
           </section>
           <section class="sidebar-section parser-settings">
             <div class="parser-heading"><h2 class="sidebar-heading">PARSER</h2><a href="parser-help.html" target="_blank" rel="noopener">Help</a></div>
-            <p>First capture group is used.</p>
+            <p>Time, level, and app use the first capture group. Message shows the complete split record.</p>
             <label>Split records <input id="splitPattern" value="\r?\n" spellcheck="false" /></label>
             <label>Time <input id="timePattern" value="^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)" spellcheck="false" /></label>
             <label>Level <input id="levelPattern" value="\b(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\b" spellcheck="false" /></label>
             <label>App / logger <input id="appPattern" value="---\s+\[[^\]]+\]\s+([^\s:]+)\s*:" spellcheck="false" /></label>
-            <label>Message <input id="messagePattern" value="---\s+\[[^\]]+\]\s+[^\s:]+\s*:\s*(.*)$" spellcheck="false" /></label>
             <label class="wrap-setting"><input id="wrapToggle" type="checkbox" checked /> Wrap message text</label>
             <label class="wrap-setting"><input id="formatJsonToggle" type="checkbox" /> Format embedded JSON</label>
             <span class="pattern-error" id="patternError" role="alert"></span>
             <button id="reparseButton" type="button">Apply parser</button>
             <label class="config-label" for="parserConfig">Pasteable parser config</label>
-            <textarea id="parserConfig" class="parser-config" rows="6" spellcheck="false"></textarea>
+            <textarea id="parserConfig" class="parser-config" rows="5" spellcheck="false"></textarea>
             <div class="config-actions"><button id="importParserConfig" type="button">Import &amp; apply</button><button id="copyParserConfig" type="button">Copy current</button></div>
           </section>
         </aside>

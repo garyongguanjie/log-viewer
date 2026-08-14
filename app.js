@@ -32,7 +32,7 @@ const state = {
 const $ = (id) => document.getElementById(id);
 const els = {
   file: $("fileInput"), status: $("fileStatus"), search: $("searchInput"), case: $("caseToggle"), regex: $("regexToggle"), clear: $("clearSearch"), jumpMode: $("jumpMode"), filterMode: $("filterMode"), searchUp: $("searchUp"), searchDown: $("searchDown"), sidebarToggle: $("sidebarToggle"), sidebarResize: $("sidebarResize"), workbenchBody: document.querySelector(".workbench-body"),
-  split: $("splitPattern"), time: $("timePattern"), level: $("levelPattern"), app: $("appPattern"), message: $("messagePattern"), wrap: $("wrapToggle"), formatJson: $("formatJsonToggle"),
+  split: $("splitPattern"), time: $("timePattern"), level: $("levelPattern"), app: $("appPattern"), wrap: $("wrapToggle"), formatJson: $("formatJsonToggle"),
   error: $("patternError"), reparse: $("reparseButton"), parserConfig: $("parserConfig"), importParserConfig: $("importParserConfig"), copyParserConfig: $("copyParserConfig"), levelFilters: $("levelFilters"), applicationFilters: $("applicationFilters"), timeSortToggle: $("timeSortToggle"),
   viewport: $("logViewport"), empty: $("emptyState"), space: $("virtualSpace"), rows: $("virtualRows"), count: $("resultCount"), template: $("rowTemplate")
 };
@@ -44,7 +44,7 @@ function saveSettings() {
   ["app", "time", "level", "message"].forEach((name) => { columnWidths[name] = getComputedStyle(els.viewport).getPropertyValue(`--${name}-width`).trim(); });
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      patterns: { split: els.split.value, time: els.time.value, level: els.level.value, app: els.app.value, message: els.message.value },
+      patterns: { split: els.split.value, time: els.time.value, level: els.level.value, app: els.app.value },
       wrap: els.wrap.checked,
       formatJson: els.formatJson.checked,
       selectedLevels: [...state.selectedLevels],
@@ -63,9 +63,8 @@ function saveSettings() {
 
 function restoreSettings() {
   if (saved.patterns) {
-    ["split", "time", "level", "app", "message"].forEach((name) => {
+    ["split", "time", "level", "app"].forEach((name) => {
       if (typeof saved.patterns[name] !== "string") return;
-      if (name === "message" && saved.patterns[name] === ":\\s*(.*)$") return;
       els[name].value = saved.patterns[name];
     });
   }
@@ -106,7 +105,7 @@ function expression(value, label) {
 }
 
 function syncParserConfig() {
-  els.parserConfig.value = ["split", "time", "level", "app", "message"].map((name) => `${name}=${els[name].value}`).join("\n");
+  els.parserConfig.value = ["split", "time", "level", "app"].map((name) => `${name}=${els[name].value}`).join("\n");
 }
 
 function importParserConfig() {
@@ -116,17 +115,16 @@ function importParserConfig() {
     const separator = line.indexOf("=");
     if (separator < 1) continue;
     const name = line.slice(0, separator).trim();
-    if (["split", "time", "level", "app", "message"].includes(name)) values[name] = line.slice(separator + 1);
+    if (["split", "time", "level", "app"].includes(name)) values[name] = line.slice(separator + 1);
   }
-  const missing = ["split", "time", "level", "app", "message"].filter((name) => typeof values[name] !== "string" || !values[name]);
+  const missing = ["split", "time", "level", "app"].filter((name) => typeof values[name] !== "string" || !values[name]);
   if (missing.length) throw new Error(`Parser config is missing: ${missing.join(", ")}`);
   const split = expression(values.split, "Split pattern");
   if (split.test("")) throw new Error("Split pattern must not match an empty string.");
   expression(values.time, "Time pattern");
   expression(values.level, "Level pattern");
   expression(values.app, "App pattern");
-  expression(values.message, "Message pattern");
-  ["split", "time", "level", "app", "message"].forEach((name) => { els[name].value = values[name]; });
+  ["split", "time", "level", "app"].forEach((name) => { els[name].value = values[name]; });
   if (state.raw) parseRecords();
   saveSettings();
   syncParserConfig();
@@ -150,7 +148,7 @@ function parseRecords() {
   if (split.test("")) throw new Error("Split pattern must not match an empty string.");
   const patterns = {
     time: expression(els.time.value, "Time pattern"), level: expression(els.level.value, "Level pattern"),
-    app: expression(els.app.value, "App pattern"), message: expression(els.message.value, "Message pattern")
+    app: expression(els.app.value, "App pattern")
   };
   state.records = state.raw.split(split).filter((line) => line.trim()).map((raw, index) => ({
     index: index + 1,
@@ -158,7 +156,7 @@ function parseRecords() {
     time: captured(patterns.time, raw),
     level: captured(patterns.level, raw, "UNKNOWN").toUpperCase(),
     app: captured(patterns.app, raw),
-    message: captured(patterns.message, raw, raw)
+    message: raw
   }));
   populateApps();
   updateVisible();
