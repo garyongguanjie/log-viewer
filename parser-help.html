@@ -71,6 +71,13 @@ app=---\s+\[[^\]]+\]\s+([^\s:]+)\s*:</pre>
     </section>
 
     <section class="help-card">
+      <h2>Bracketed App Preset</h2>
+      <p>Input record:</p>
+      <pre>[2026-08-13 18:01:23.738][my-sample-service][][NA][/apiname][somerandomvalue][somerandomvalue][LogType:usage][INFO ] sample log message</pre>
+      <p>Select <strong>Bracketed app</strong> in the parser preset list. It extracts the timestamp, service name, and level from the bracketed fields.</p>
+    </section>
+
+    <section class="help-card">
       <h2>Troubleshooting</h2>
       <dl><dt>The message contains too much or too little text</dt><dd>Adjust the split expression. Message always contains one complete record after splitting.</dd><dt>Columns show a dash</dt><dd>The corresponding time, level, or app expression did not match, or group 1 is missing.</dd><dt>Records are split unexpectedly</dt><dd>Make the split expression match only record boundaries. For one-record-per-line logs, use <code>\r?\n</code>.</dd><dt>Import fails</dt><dd>Remove Markdown fences and ensure each of the four required names and regexes shares one line.</dd></dl>
     </section>

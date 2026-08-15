@@ -3,6 +3,20 @@ const OVERSCAN = 12;
 const SEARCH_DEBOUNCE_MS = 50;
 const STORAGE_KEY = "log-viewer-settings-v1";
 const levels = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"];
+const parserPresets = {
+  default: {
+    split: String.raw`\r?\n`,
+    time: String.raw`^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)`,
+    level: String.raw`\b(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\b`,
+    app: String.raw`---\s+\[[^\]]+\]\s+([^\s:]+)\s*:`
+  },
+  "bracketed-app": {
+    split: String.raw`\r?\n`,
+    time: String.raw`^\[(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\]`,
+    level: String.raw`\[\s*(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\s*\]`,
+    app: String.raw`^\[[^\]]+\]\[([^\]]+)\]`
+  }
+};
 
 function readSettings() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
@@ -26,14 +40,16 @@ const state = {
   regexSearch: Boolean(saved.regexSearch),
   searchMode: saved.searchMode === "filter" ? "filter" : "jump",
   sidebarHidden: Boolean(saved.sidebarHidden),
-  sort: saved.sort === "descending" ? "descending" : "ascending"
+  sort: saved.sort === "descending" ? "descending" : "ascending",
+  replacementRules: Array.isArray(saved.replacementRules) ? saved.replacementRules.filter((rule) => rule && typeof rule.find === "string" && typeof rule.replace === "string") : []
 };
 
 const $ = (id) => document.getElementById(id);
 const els = {
   file: $("fileInput"), status: $("fileStatus"), search: $("searchInput"), case: $("caseToggle"), regex: $("regexToggle"), clear: $("clearSearch"), jumpMode: $("jumpMode"), filterMode: $("filterMode"), searchUp: $("searchUp"), searchDown: $("searchDown"), sidebarToggle: $("sidebarToggle"), sidebarResize: $("sidebarResize"), workbenchBody: document.querySelector(".workbench-body"),
-  split: $("splitPattern"), time: $("timePattern"), level: $("levelPattern"), app: $("appPattern"), wrap: $("wrapToggle"), formatJson: $("formatJsonToggle"),
+  preset: $("parserPreset"), split: $("splitPattern"), time: $("timePattern"), level: $("levelPattern"), app: $("appPattern"), wrap: $("wrapToggle"), formatJson: $("formatJsonToggle"),
   error: $("patternError"), reparse: $("reparseButton"), parserConfig: $("parserConfig"), importParserConfig: $("importParserConfig"), copyParserConfig: $("copyParserConfig"), levelFilters: $("levelFilters"), applicationFilters: $("applicationFilters"), timeSortToggle: $("timeSortToggle"),
+  replacementRules: $("replacementRules"), addReplacement: $("addReplacement"), applyReplacements: $("applyReplacements"),
   viewport: $("logViewport"), empty: $("emptyState"), space: $("virtualSpace"), rows: $("virtualRows"), count: $("resultCount"), template: $("rowTemplate")
 };
 let searchDebounceTimer = null;
@@ -56,6 +72,7 @@ function saveSettings() {
       sidebarHidden: state.sidebarHidden,
       sidebarWidth: getComputedStyle(els.workbenchBody).getPropertyValue("--sidebar-width").trim(),
       sort: state.sort,
+      replacementRules: state.replacementRules,
       columnWidths
     }));
   } catch { /* The viewer still works when browser storage is unavailable. */ }
@@ -108,6 +125,22 @@ function syncParserConfig() {
   els.parserConfig.value = ["split", "time", "level", "app"].map((name) => `${name}=${els[name].value}`).join("\n");
 }
 
+function syncParserPreset() {
+  els.preset.value = Object.entries(parserPresets).find(([, patterns]) =>
+    ["split", "time", "level", "app"].every((name) => els[name].value === patterns[name])
+  )?.[0] || "custom";
+}
+
+function applyParserPreset() {
+  const patterns = parserPresets[els.preset.value];
+  if (!patterns) return;
+  ["split", "time", "level", "app"].forEach((name) => { els[name].value = patterns[name]; });
+  els.error.textContent = "";
+  if (state.raw) parseRecords();
+  saveSettings();
+  syncParserConfig();
+}
+
 function importParserConfig() {
   const values = {};
   for (const line of els.parserConfig.value.split(/\r?\n/)) {
@@ -127,6 +160,7 @@ function importParserConfig() {
   ["split", "time", "level", "app"].forEach((name) => { els[name].value = values[name]; });
   if (state.raw) parseRecords();
   saveSettings();
+  syncParserPreset();
   syncParserConfig();
 }
 
@@ -143,6 +177,68 @@ function captured(pattern, text, fallback = "-") {
   return match ? (match[1] ?? match.groups?.value ?? match[0]) : fallback;
 }
 
+function decodeReplacementValue(value) {
+  return value.replace(/\\u([\da-fA-F]{4})|\\(n|r|t|\\)/g, (match, unicode, escape) => {
+    if (unicode) return String.fromCharCode(parseInt(unicode, 16));
+    return { n: "\n", r: "\r", t: "\t", "\\": "\\" }[escape];
+  });
+}
+
+function replaceLogStrings(text) {
+  return state.replacementRules.reduce((result, rule) => {
+    const find = decodeReplacementValue(rule.find);
+    return find ? result.split(find).join(decodeReplacementValue(rule.replace)) : result;
+  }, text);
+}
+
+function applyReplacementRules() {
+  try {
+    els.error.textContent = "";
+    saveSettings();
+    if (state.raw) parseRecords();
+  } catch (error) { els.error.textContent = error.message; }
+}
+
+function renderReplacementRules() {
+  const fragment = document.createDocumentFragment();
+  state.replacementRules.forEach((rule, index) => {
+    const row = document.createElement("div");
+    row.className = "replacement-rule";
+    const find = document.createElement("input");
+    find.value = rule.find;
+    find.placeholder = "Find";
+    find.setAttribute("aria-label", `Find string for replacement ${index + 1}`);
+    find.spellcheck = false;
+    const replace = document.createElement("input");
+    replace.value = rule.replace;
+    replace.placeholder = "Replace with";
+    replace.setAttribute("aria-label", `Replacement string for replacement ${index + 1}`);
+    replace.spellcheck = false;
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "remove-replacement";
+    remove.textContent = "x";
+    remove.title = `Remove replacement ${index + 1}`;
+    remove.setAttribute("aria-label", remove.title);
+    find.addEventListener("input", () => { rule.find = find.value; });
+    replace.addEventListener("input", () => { rule.replace = replace.value; });
+    remove.addEventListener("click", () => {
+      state.replacementRules.splice(index, 1);
+      renderReplacementRules();
+      applyReplacementRules();
+    });
+    row.append(find, replace, remove);
+    fragment.append(row);
+  });
+  if (!state.replacementRules.length) {
+    const empty = document.createElement("span");
+    empty.className = "replacement-placeholder";
+    empty.textContent = "No replacements";
+    fragment.append(empty);
+  }
+  els.replacementRules.replaceChildren(fragment);
+}
+
 function parseRecords() {
   const split = expression(els.split.value, "Split pattern");
   if (split.test("")) throw new Error("Split pattern must not match an empty string.");
@@ -156,7 +252,7 @@ function parseRecords() {
     time: captured(patterns.time, raw),
     level: captured(patterns.level, raw, "UNKNOWN").toUpperCase(),
     app: captured(patterns.app, raw),
-    message: raw
+    message: replaceLogStrings(raw)
   }));
   populateApps();
   updateVisible();
@@ -354,9 +450,9 @@ function prepareLayout() {
   state.offsets = [0];
   state.visible.forEach((record) => {
     record.displayMessage = els.formatJson.checked ? formatEmbeddedJson(record.message) : record.message;
-    record.hasFormattedJson = record.displayMessage !== record.message;
-    const formattedLines = record.hasFormattedJson ? record.displayMessage.split("\n").length : 0;
-    record.rowHeight = record.hasFormattedJson ? Math.max(72, formattedLines * 16 + 20) : ROW_HEIGHT;
+    const displayLines = record.displayMessage.split("\n").length;
+    record.hasMultilineMessage = displayLines > 1;
+    record.rowHeight = record.hasMultilineMessage ? Math.max(72, displayLines * 16 + 20) : ROW_HEIGHT;
     offset += record.rowHeight;
     state.offsets.push(offset);
   });
@@ -389,7 +485,7 @@ function renderRows(force = false) {
     node.style.transform = `translateY(${state.offsets[i]}px)`;
     node.style.height = `${record.rowHeight}px`;
     node.classList.toggle("alternate-row", i % 2 === 1);
-    node.classList.toggle("has-formatted-json", record.hasFormattedJson);
+    node.classList.toggle("has-multiline-message", record.hasMultilineMessage);
     node.classList.toggle("current-match", state.searchMode === "jump" && state.matches[state.currentMatch] === i);
     node.querySelector(".app-cell").innerHTML = highlight(record.app);
     node.querySelector(".time-cell").innerHTML = highlight(record.time);
@@ -397,7 +493,7 @@ function renderRows(force = false) {
     level.textContent = record.level;
     level.classList.add(`level-${record.level.toLowerCase()}`);
     const message = node.querySelector(".message-cell");
-    message.classList.toggle("formatted-json", record.hasFormattedJson);
+    message.classList.toggle("multiline-message", record.hasMultilineMessage);
     message.innerHTML = highlight(record.displayMessage);
     node.title = record.raw;
     fragment.append(node);
@@ -417,11 +513,19 @@ els.file.addEventListener("change", async ({ target }) => {
   els.status.textContent = `Reading ${file.name}...`;
   try { loadLog(await file.text(), file.name, file.size); } catch (error) { els.error.textContent = error.message; }
 });
+els.preset.addEventListener("change", applyParserPreset);
+[els.split, els.time, els.level, els.app].forEach((input) => input.addEventListener("input", syncParserPreset));
 els.reparse.addEventListener("click", () => {
-  try { els.error.textContent = ""; parseRecords(); saveSettings(); syncParserConfig(); } catch (error) { els.error.textContent = error.message; }
+  try { els.error.textContent = ""; parseRecords(); saveSettings(); syncParserPreset(); syncParserConfig(); } catch (error) { els.error.textContent = error.message; }
 });
 els.importParserConfig.addEventListener("click", () => { try { els.error.textContent = ""; importParserConfig(); } catch (error) { els.error.textContent = error.message; } });
 els.copyParserConfig.addEventListener("click", copyParserConfig);
+els.addReplacement.addEventListener("click", () => {
+  state.replacementRules.push({ find: "", replace: "" });
+  renderReplacementRules();
+  els.replacementRules.querySelector(".replacement-rule:last-child input")?.focus();
+});
+els.applyReplacements.addEventListener("click", applyReplacementRules);
 els.search.addEventListener("input", () => {
   window.clearTimeout(searchDebounceTimer);
   searchDebounceTimer = window.setTimeout(applySearch, SEARCH_DEBOUNCE_MS);
@@ -495,7 +599,9 @@ document.querySelectorAll("[data-resize]").forEach((handle) => handle.addEventLi
 }));
 
 restoreSettings();
+syncParserPreset();
 makeLevelFilters();
+renderReplacementRules();
 fetch("springboot-sample.log")
   .then((response) => { if (!response.ok) throw new Error("Sample log unavailable"); return response.text(); })
   .then((text) => loadLog(text, "springboot-sample.log", new Blob([text]).size))

@@ -71,11 +71,27 @@ button { cursor: pointer; }
 .app-visibility.app-hidden .eye-icon { opacity: .45; }
 .app-visibility.app-hidden .eye-icon::before { content: ""; position: absolute; left: -2px; top: 3px; width: 18px; height: 1px; background: var(--danger); transform: rotate(-35deg); }
 
+.replacement-settings p { margin: 0 0 10px; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.replacement-settings code { color: #354150; font: 10px Consolas, "SFMono-Regular", Menlo, monospace; }
+.replacement-list { display: grid; gap: 6px; }
+.replacement-rule { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 25px; gap: 4px; }
+.replacement-rule input { width: 100%; min-width: 0; padding: 6px; border: 1px solid #8796a5; border-radius: 2px; outline: 0; background: #fff; font: 10px Consolas, "SFMono-Regular", Menlo, monospace; }
+.replacement-rule input:focus { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
+.remove-replacement { padding: 0; border: 1px solid #8796a5; border-radius: 2px; background: #fff; color: var(--danger); font: 12px Consolas, monospace; }
+.remove-replacement:hover { border-color: var(--danger); background: #fce8e3; }
+.replacement-placeholder { color: var(--muted); font-size: 11px; }
+.replacement-settings .add-replacement, .replacement-settings .apply-replacements { width: 100%; margin-top: 8px; padding: 6px 8px; border: 1px solid #8796a5; border-radius: 2px; background: #fff; color: var(--blue-dark); font-size: 11px; font-weight: 700; }
+.replacement-settings .add-replacement:hover { border-color: var(--blue); background: #e9f3fb; }
+.replacement-settings .apply-replacements { border-color: var(--blue-dark); background: var(--blue); color: #fff; }
+.replacement-settings .apply-replacements:hover { background: #075fae; }
+
 .parser-settings p { margin: 0 0 11px; color: var(--muted); font-size: 11px; }
 .parser-heading { display: flex; align-items: baseline; justify-content: space-between; }
 .parser-heading a { color: var(--blue); font-size: 11px; font-weight: 600; text-decoration: none; }
 .parser-heading a:hover { text-decoration: underline; }
 .parser-settings > label:not(.wrap-setting) { display: grid; gap: 4px; margin-bottom: 9px; color: #414d5c; font-size: 11px; font-weight: 600; }
+.parser-settings select { width: 100%; padding: 6px 7px; border: 1px solid #8796a5; border-radius: 2px; outline: 0; background: #fff; font-size: 11px; }
+.parser-settings select:focus { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
 .parser-settings input:not([type="checkbox"]) { width: 100%; min-width: 0; padding: 6px 7px; border: 1px solid #8796a5; border-radius: 2px; outline: 0; background: #fff; font: 10px Consolas, "SFMono-Regular", Menlo, monospace; }
 .parser-settings input:not([type="checkbox"]):focus { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
 .wrap-setting { display: flex; align-items: center; gap: 7px; margin: 11px 0; color: var(--text); font-size: 12px; }
@@ -137,9 +153,9 @@ mark { padding: 1px 0; background: #fff2b2; color: inherit; }
 .log-table.wrap-enabled { overflow-x: hidden; }
 .log-table.wrap-enabled .table-head, .log-table.wrap-enabled .log-row { width: 100%; min-width: 0; grid-template-columns: var(--app-width) var(--time-width) var(--level-width) minmax(0, 1fr); }
 .log-table.wrap-enabled .message-cell { display: -webkit-box; overflow-wrap: anywhere; word-break: break-word; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 16px; }
-.log-row.has-formatted-json { align-items: stretch; }
-.log-row.has-formatted-json > *:not(.message-cell) { padding-top: 13px; }
-.log-table .message-cell.formatted-json { display: block; overflow: visible; padding-top: 8px; padding-bottom: 8px; overflow-wrap: anywhere; white-space: pre-wrap; line-height: 16px; }
+.log-row.has-multiline-message { align-items: stretch; }
+.log-row.has-multiline-message > *:not(.message-cell) { padding-top: 13px; }
+.log-table .message-cell.multiline-message { display: block; overflow: visible; padding-top: 8px; padding-bottom: 8px; overflow-wrap: anywhere; white-space: pre-wrap; line-height: 16px; }
 .empty-state { display: grid; min-height: 280px; place-content: center; color: var(--muted); text-align: center; }
 .empty-state[hidden] { display: none; }
 
