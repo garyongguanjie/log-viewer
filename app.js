@@ -401,9 +401,22 @@ function escapeHtml(value) {
 function highlight(value) {
   const safe = escapeHtml(value);
   if (!state.search) return safe;
+  if (!state.regexSearch) {
+    const source = String(value);
+    const haystack = state.caseSensitive ? source : source.toLowerCase();
+    const needle = state.caseSensitive ? state.search : state.search.toLowerCase();
+    let result = "";
+    let position = 0;
+    let match = haystack.indexOf(needle, position);
+    while (match !== -1) {
+      result += `${escapeHtml(source.slice(position, match))}<mark>${escapeHtml(source.slice(match, match + state.search.length))}</mark>`;
+      position = match + state.search.length;
+      match = haystack.indexOf(needle, position);
+    }
+    return result + escapeHtml(source.slice(position));
+  }
   try {
-    const pattern = state.regexSearch ? state.search : state.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return safe.replace(new RegExp(`(${pattern})`, `g${state.caseSensitive ? "" : "i"}`), "<mark>$1</mark>");
+    return safe.replace(new RegExp(`(${state.search})`, `g${state.caseSensitive ? "" : "i"}`), "<mark>$1</mark>");
   } catch { return safe; }
 }
 
@@ -530,8 +543,10 @@ els.search.addEventListener("input", () => {
   window.clearTimeout(searchDebounceTimer);
   searchDebounceTimer = window.setTimeout(applySearch, SEARCH_DEBOUNCE_MS);
 });
-els.search.addEventListener("keydown", (event) => {
+document.addEventListener("keydown", (event) => {
   if (event.key !== "Enter" || state.searchMode !== "jump") return;
+  const interactive = event.target.closest("button, input, select, textarea, [contenteditable]");
+  if (interactive && event.target !== els.search) return;
   event.preventDefault();
   if (searchDebounceTimer !== null) applySearch();
   jumpToMatch(event.shiftKey ? -1 : 1);
