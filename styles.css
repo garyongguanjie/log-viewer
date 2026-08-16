@@ -111,7 +111,8 @@ button { cursor: pointer; }
 .filter-group { display: flex; align-items: center; gap: 8px; }
 .filter-label { margin: 0; color: #414d5c; font-size: 10px; font-weight: 700; letter-spacing: .35px; }
 .chips { display: flex; gap: 4px; }
-.chip { padding: 3px 8px; border: 1px solid #8796a5; border-radius: 2px; background: #fff; color: #414d5c; font: 10px Consolas, monospace; }
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid #8796a5; border-radius: 2px; background: #fff; color: #414d5c; font: 10px Consolas, monospace; }
+.chip-count { opacity: .7; font-variant-numeric: tabular-nums; }
 .chip:hover { border-color: var(--blue); background: #f1f7fb; }
 .chip.active { border-color: var(--blue-dark); background: #e9f3fb; color: var(--blue-dark); font-weight: 700; }
 .chip[data-level="WARN"].active { border-color: #8d6605; background: #fff3cd; color: #6f4f00; }

@@ -105,7 +105,12 @@ function makeLevelFilters() {
     const button = document.createElement("button");
     button.className = "chip";
     button.dataset.level = level;
-    button.textContent = level;
+    const label = document.createElement("span");
+    label.textContent = level;
+    const count = document.createElement("span");
+    count.className = "chip-count";
+    count.textContent = "0";
+    button.append(label, count);
     button.classList.toggle("active", state.selectedLevels.has(level));
     button.addEventListener("click", () => {
       state.selectedLevels.has(level) ? state.selectedLevels.delete(level) : state.selectedLevels.add(level);
@@ -114,6 +119,14 @@ function makeLevelFilters() {
       updateVisible();
     });
     els.levelFilters.append(button);
+  });
+}
+
+function renderLevelCounts(records) {
+  const counts = Object.fromEntries(levels.map((level) => [level, 0]));
+  records.forEach((record) => { if (record.level in counts) counts[record.level] += 1; });
+  els.levelFilters.querySelectorAll("[data-level]").forEach((button) => {
+    button.querySelector(".chip-count").textContent = counts[button.dataset.level].toLocaleString();
   });
 }
 
@@ -276,13 +289,13 @@ function applySearch() {
 
 function updateVisible() {
   const allLevelsSelected = state.selectedLevels.size === levels.length;
-  const filtered = state.records.filter((record) =>
-    (allLevelsSelected || state.selectedLevels.has(record.level)) &&
-    !state.hiddenApplications.has(record.app)
-  );
+  let applicable = state.records.filter((record) => !state.hiddenApplications.has(record.app));
+  if (state.searchMode === "filter" && state.search) applicable = applicable.filter(searchMatches);
+  renderLevelCounts(applicable);
+  const filtered = applicable.filter((record) => allLevelsSelected || state.selectedLevels.has(record.level));
   const direction = state.sort === "ascending" ? 1 : -1;
   filtered.sort((a, b) => direction * a.time.localeCompare(b.time, undefined, { numeric: true }));
-  state.visible = state.searchMode === "filter" && state.search ? filtered.filter(searchMatches) : filtered;
+  state.visible = filtered;
   state.matches = [];
   if (state.searchMode === "jump" && state.search) {
     state.visible.forEach((record, index) => { if (searchMatches(record)) state.matches.push(index); });
