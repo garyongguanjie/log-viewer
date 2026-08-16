@@ -3,20 +3,6 @@ const OVERSCAN = 12;
 const SEARCH_DEBOUNCE_MS = 50;
 const STORAGE_KEY = "log-viewer-settings-v1";
 const levels = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"];
-const parserPresets = {
-  default: {
-    split: String.raw`\r?\n`,
-    time: String.raw`^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)`,
-    level: String.raw`\b(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\b`,
-    app: String.raw`---\s+\[[^\]]+\]\s+([^\s:]+)\s*:`
-  },
-  "bracketed-app": {
-    split: String.raw`\r?\n`,
-    time: String.raw`^\[(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)\]`,
-    level: String.raw`\[\s*(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\s*\]`,
-    app: String.raw`^\[[^\]]+\]\[([^\]]+)\]`
-  }
-};
 
 function readSettings() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
@@ -47,20 +33,21 @@ const state = {
 const $ = (id) => document.getElementById(id);
 const els = {
   file: $("fileInput"), status: $("fileStatus"), search: $("searchInput"), case: $("caseToggle"), regex: $("regexToggle"), clear: $("clearSearch"), jumpMode: $("jumpMode"), filterMode: $("filterMode"), searchUp: $("searchUp"), searchDown: $("searchDown"), sidebarToggle: $("sidebarToggle"), sidebarResize: $("sidebarResize"), workbenchBody: document.querySelector(".workbench-body"),
-  preset: $("parserPreset"), split: $("splitPattern"), time: $("timePattern"), level: $("levelPattern"), app: $("appPattern"), wrap: $("wrapToggle"), formatJson: $("formatJsonToggle"),
+  parserFields: $("parserFields"), parserDetection: $("parserDetection"), preset: $("parserPreset"), split: $("splitPattern"), time: $("timePattern"), level: $("levelPattern"), app: $("appPattern"), wrap: $("wrapToggle"), formatJson: $("formatJsonToggle"),
   error: $("patternError"), reparse: $("reparseButton"), parserConfig: $("parserConfig"), importParserConfig: $("importParserConfig"), copyParserConfig: $("copyParserConfig"), levelFilters: $("levelFilters"), applicationFilters: $("applicationFilters"), timeSortToggle: $("timeSortToggle"),
   replacementRules: $("replacementRules"), addReplacement: $("addReplacement"), applyReplacements: $("applyReplacements"),
   viewport: $("logViewport"), empty: $("emptyState"), space: $("virtualSpace"), rows: $("virtualRows"), count: $("resultCount"), template: $("rowTemplate")
 };
 let searchDebounceTimer = null;
 let scrollFrame = null;
+let parserController;
 
 function saveSettings() {
   const columnWidths = {};
   ["app", "time", "level", "message"].forEach((name) => { columnWidths[name] = getComputedStyle(els.viewport).getPropertyValue(`--${name}-width`).trim(); });
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
-      patterns: { split: els.split.value, time: els.time.value, level: els.level.value, app: els.app.value },
+      ...(parserController ? parserController.getSettings() : {}),
       wrap: els.wrap.checked,
       formatJson: els.formatJson.checked,
       selectedLevels: [...state.selectedLevels],
@@ -79,12 +66,6 @@ function saveSettings() {
 }
 
 function restoreSettings() {
-  if (saved.patterns) {
-    ["split", "time", "level", "app"].forEach((name) => {
-      if (typeof saved.patterns[name] !== "string") return;
-      els[name].value = saved.patterns[name];
-    });
-  }
   els.wrap.checked = saved.wrap !== false;
   els.formatJson.checked = Boolean(saved.formatJson);
   els.viewport.classList.toggle("wrap-enabled", els.wrap.checked);
@@ -97,7 +78,6 @@ function restoreSettings() {
     ["app", "time", "level", "message"].forEach((name) => { if (/^\d+(?:\.\d+)?px$/.test(saved.columnWidths[name])) els.viewport.style.setProperty(`--${name}-width`, saved.columnWidths[name]); });
   }
   renderSortState();
-  syncParserConfig();
 }
 
 function makeLevelFilters() {
@@ -128,66 +108,6 @@ function renderLevelCounts(records) {
   els.levelFilters.querySelectorAll("[data-level]").forEach((button) => {
     button.querySelector(".chip-count").textContent = counts[button.dataset.level].toLocaleString();
   });
-}
-
-function expression(value, label) {
-  try { return new RegExp(value); } catch (error) { throw new Error(`${label}: ${error.message}`); }
-}
-
-function syncParserConfig() {
-  els.parserConfig.value = ["split", "time", "level", "app"].map((name) => `${name}=${els[name].value}`).join("\n");
-}
-
-function syncParserPreset() {
-  els.preset.value = Object.entries(parserPresets).find(([, patterns]) =>
-    ["split", "time", "level", "app"].every((name) => els[name].value === patterns[name])
-  )?.[0] || "custom";
-}
-
-function applyParserPreset() {
-  const patterns = parserPresets[els.preset.value];
-  if (!patterns) return;
-  ["split", "time", "level", "app"].forEach((name) => { els[name].value = patterns[name]; });
-  els.error.textContent = "";
-  if (state.raw) parseRecords();
-  saveSettings();
-  syncParserConfig();
-}
-
-function importParserConfig() {
-  const values = {};
-  for (const line of els.parserConfig.value.split(/\r?\n/)) {
-    if (!line.trim()) continue;
-    const separator = line.indexOf("=");
-    if (separator < 1) continue;
-    const name = line.slice(0, separator).trim();
-    if (["split", "time", "level", "app"].includes(name)) values[name] = line.slice(separator + 1);
-  }
-  const missing = ["split", "time", "level", "app"].filter((name) => typeof values[name] !== "string" || !values[name]);
-  if (missing.length) throw new Error(`Parser config is missing: ${missing.join(", ")}`);
-  const split = expression(values.split, "Split pattern");
-  if (split.test("")) throw new Error("Split pattern must not match an empty string.");
-  expression(values.time, "Time pattern");
-  expression(values.level, "Level pattern");
-  expression(values.app, "App pattern");
-  ["split", "time", "level", "app"].forEach((name) => { els[name].value = values[name]; });
-  if (state.raw) parseRecords();
-  saveSettings();
-  syncParserPreset();
-  syncParserConfig();
-}
-
-async function copyParserConfig() {
-  syncParserConfig();
-  try { await navigator.clipboard.writeText(els.parserConfig.value); }
-  catch { els.parserConfig.select(); document.execCommand("copy"); }
-  els.copyParserConfig.textContent = "Copied";
-  window.setTimeout(() => { els.copyParserConfig.textContent = "Copy current"; }, 1200);
-}
-
-function captured(pattern, text, fallback = "-") {
-  const match = text.match(pattern);
-  return match ? (match[1] ?? match.groups?.value ?? match[0]) : fallback;
 }
 
 function decodeReplacementValue(value) {
@@ -253,23 +173,25 @@ function renderReplacementRules() {
 }
 
 function parseRecords() {
-  const split = expression(els.split.value, "Split pattern");
-  if (split.test("")) throw new Error("Split pattern must not match an empty string.");
-  const patterns = {
-    time: expression(els.time.value, "Time pattern"), level: expression(els.level.value, "Level pattern"),
-    app: expression(els.app.value, "App pattern")
-  };
-  state.records = state.raw.split(split).filter((line) => line.trim()).map((raw, index) => ({
-    index: index + 1,
-    raw,
-    time: captured(patterns.time, raw),
-    level: captured(patterns.level, raw, "UNKNOWN").toUpperCase(),
-    app: captured(patterns.app, raw),
-    message: replaceLogStrings(raw)
-  }));
-  populateApps();
-  updateVisible();
+  parserController.parse(state.raw);
 }
+
+parserController = LogParser.createController({
+  elements: {
+    fields: els.parserFields, detection: els.parserDetection,
+    preset: els.preset, split: els.split, time: els.time, level: els.level, app: els.app,
+    error: els.error, reparse: els.reparse, config: els.parserConfig,
+    importConfig: els.importParserConfig, copyConfig: els.copyParserConfig
+  },
+  saved,
+  getText: () => state.raw,
+  acceptRecords: (records) => {
+    state.records = records.map((record) => ({ ...record, message: replaceLogStrings(record.message) }));
+    populateApps();
+    updateVisible();
+  },
+  settingsChanged: saveSettings
+});
 
 function searchMatches(record) {
   if (!state.search) return true;
@@ -539,13 +461,6 @@ els.file.addEventListener("change", async ({ target }) => {
   els.status.textContent = `Reading ${file.name}...`;
   try { loadLog(await file.text(), file.name, file.size); } catch (error) { els.error.textContent = error.message; }
 });
-els.preset.addEventListener("change", applyParserPreset);
-[els.split, els.time, els.level, els.app].forEach((input) => input.addEventListener("input", syncParserPreset));
-els.reparse.addEventListener("click", () => {
-  try { els.error.textContent = ""; parseRecords(); saveSettings(); syncParserPreset(); syncParserConfig(); } catch (error) { els.error.textContent = error.message; }
-});
-els.importParserConfig.addEventListener("click", () => { try { els.error.textContent = ""; importParserConfig(); } catch (error) { els.error.textContent = error.message; } });
-els.copyParserConfig.addEventListener("click", copyParserConfig);
 els.addReplacement.addEventListener("click", () => {
   state.replacementRules.push({ find: "", replace: "" });
   renderReplacementRules();
@@ -627,10 +542,5 @@ document.querySelectorAll("[data-resize]").forEach((handle) => handle.addEventLi
 }));
 
 restoreSettings();
-syncParserPreset();
 makeLevelFilters();
 renderReplacementRules();
-fetch("springboot-sample.log")
-  .then((response) => { if (!response.ok) throw new Error("Sample log unavailable"); return response.text(); })
-  .then((text) => loadLog(text, "springboot-sample.log", new Blob([text]).size))
-  .catch(() => {});

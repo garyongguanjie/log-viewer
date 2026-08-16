@@ -89,17 +89,21 @@ button { cursor: pointer; }
 .parser-heading { display: flex; align-items: baseline; justify-content: space-between; }
 .parser-heading a { color: var(--blue); font-size: 11px; font-weight: 600; text-decoration: none; }
 .parser-heading a:hover { text-decoration: underline; }
-.parser-settings > label:not(.wrap-setting) { display: grid; gap: 4px; margin-bottom: 9px; color: #414d5c; font-size: 11px; font-weight: 600; }
+.parser-settings > label:not(.wrap-setting), .parser-fields > label:not(.config-label) { display: grid; gap: 4px; margin-bottom: 9px; color: #414d5c; font-size: 11px; font-weight: 600; }
 .parser-settings select { width: 100%; padding: 6px 7px; border: 1px solid #8796a5; border-radius: 2px; outline: 0; background: #fff; font-size: 11px; }
 .parser-settings select:focus { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
 .parser-settings input:not([type="checkbox"]) { width: 100%; min-width: 0; padding: 6px 7px; border: 1px solid #8796a5; border-radius: 2px; outline: 0; background: #fff; font: 10px Consolas, "SFMono-Regular", Menlo, monospace; }
 .parser-settings input:not([type="checkbox"]):focus { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
+.parser-detection { display: block; min-height: 16px; margin: -2px 0 7px; color: var(--teal); font: 10px Consolas, "SFMono-Regular", Menlo, monospace; }
+.parser-fields { min-width: 0; margin: 0; padding: 0; border: 0; }
+.parser-fields:disabled { opacity: .48; }
+.parser-fields:disabled input, .parser-fields:disabled textarea, .parser-fields:disabled button { cursor: not-allowed; background: #e4e7eb; }
 .wrap-setting { display: flex; align-items: center; gap: 7px; margin: 11px 0; color: var(--text); font-size: 12px; }
 .wrap-setting input { margin: 0; accent-color: var(--blue); }
 .pattern-error { display: block; margin-bottom: 8px; color: var(--danger); font: 10px Consolas, monospace; line-height: 1.4; }
-.parser-settings > button { width: 100%; padding: 7px 10px; border: 1px solid var(--blue-dark); border-radius: 2px; background: var(--blue); color: #fff; font-size: 12px; font-weight: 700; }
-.parser-settings > button:hover { background: #075fae; }
-.config-label { margin-top: 14px; }
+.parser-fields > button { width: 100%; padding: 7px 10px; border: 1px solid var(--blue-dark); border-radius: 2px; background: var(--blue); color: #fff; font-size: 12px; font-weight: 700; }
+.parser-fields > button:hover:not(:disabled) { background: #075fae; }
+.config-label { display: block; margin-top: 14px; margin-bottom: 4px; color: #414d5c; font-size: 11px; font-weight: 600; }
 .parser-config { width: 100%; resize: vertical; padding: 7px; border: 1px solid #8796a5; border-radius: 2px; background: #fff; font: 10px Consolas, "SFMono-Regular", Menlo, monospace; line-height: 1.45; }
 .parser-config:focus { border-color: var(--blue); outline: 0; box-shadow: 0 0 0 1px var(--blue); }
 .config-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 6px; }

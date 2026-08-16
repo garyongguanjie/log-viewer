@@ -44,18 +44,21 @@
           <section class="sidebar-section parser-settings">
             <div class="parser-heading"><h2 class="sidebar-heading">PARSER</h2><a href="parser-help.html" target="_blank" rel="noopener">Help</a></div>
             <p>Time, level, and app use the first capture group. Message shows the complete split record.</p>
-            <label>Preset <select id="parserPreset"><option value="default">Default (Spring Boot)</option><option value="bracketed-app">Bracketed app</option><option value="custom" disabled>Custom</option></select></label>
-            <label>Split records <input id="splitPattern" value="\r?\n" spellcheck="false" /></label>
-            <label>Time <input id="timePattern" value="^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)" spellcheck="false" /></label>
-            <label>Level <input id="levelPattern" value="\b(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\b" spellcheck="false" /></label>
-            <label>App / logger <input id="appPattern" value="---\s+\[[^\]]+\]\s+([^\s:]+)\s*:" spellcheck="false" /></label>
+            <label>Preset <select id="parserPreset"></select></label>
+            <span class="parser-detection" id="parserDetection" aria-live="polite"></span>
+            <fieldset class="parser-fields" id="parserFields">
+              <label>Split records <input id="splitPattern" value="\r?\n" spellcheck="false" /></label>
+              <label>Time <input id="timePattern" value="^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)" spellcheck="false" /></label>
+              <label>Level <input id="levelPattern" value="\b(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\b" spellcheck="false" /></label>
+              <label>App / logger <input id="appPattern" value="---\s+\[[^\]]+\]\s+([^\s:]+)\s*:" spellcheck="false" /></label>
+              <span class="pattern-error" id="patternError" role="alert"></span>
+              <button id="reparseButton" type="button">Apply parser</button>
+              <label class="config-label" for="parserConfig">Pasteable parser config</label>
+              <textarea id="parserConfig" class="parser-config" rows="5" spellcheck="false"></textarea>
+              <div class="config-actions"><button id="importParserConfig" type="button">Import &amp; apply</button><button id="copyParserConfig" type="button">Copy current</button></div>
+            </fieldset>
             <label class="wrap-setting"><input id="wrapToggle" type="checkbox" checked /> Wrap message text</label>
             <label class="wrap-setting"><input id="formatJsonToggle" type="checkbox" /> Format embedded JSON</label>
-            <span class="pattern-error" id="patternError" role="alert"></span>
-            <button id="reparseButton" type="button">Apply parser</button>
-            <label class="config-label" for="parserConfig">Pasteable parser config</label>
-            <textarea id="parserConfig" class="parser-config" rows="5" spellcheck="false"></textarea>
-            <div class="config-actions"><button id="importParserConfig" type="button">Import &amp; apply</button><button id="copyParserConfig" type="button">Copy current</button></div>
           </section>
           <section class="sidebar-section replacement-settings">
             <h2 class="sidebar-heading">STRING REPLACE</h2>
@@ -81,6 +84,7 @@
     </section>
   </main>
   <template id="rowTemplate"><div class="log-row"><span class="app-cell"></span><time class="time-cell"></time><span class="level-cell"></span><span class="message-cell"></span></div></template>
+  <script src="parser.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
