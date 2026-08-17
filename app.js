@@ -5,7 +5,14 @@ const OVERSCAN = 12;
 const SEARCH_DEBOUNCE_MS = 50;
 const RESIZE_DEBOUNCE_MS = 80;
 const STORAGE_KEY = "log-viewer-settings-v1";
+const CSV_ENTIRE_ROW = "__entire_row__";
 const levels = ["UNK", "TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"];
+const csvAliases = {
+  time: ["@timestamp", "timestamp", "event.created", "event.ingested", "time", "datetime", "date"],
+  level: ["log.level", "level", "loglevel", "severity", "event.severity"],
+  app: ["service.name", "servicename", "application.name", "application", "app", "kubernetes.container.name", "container.name", "log.logger", "logger", "host.name"],
+  message: ["message", "event.original", "log.original", "msg", "log"]
+};
 
 function readSettings() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
@@ -28,6 +35,10 @@ const state = {
   caseSensitive: Boolean(saved.caseSensitive),
   regexSearch: Boolean(saved.regexSearch),
   searchMode: saved.searchMode === "filter" ? "filter" : "jump",
+  inputMode: saved.inputMode === "text" ? "text" : "csv",
+  csvRows: [],
+  csvHeaders: [],
+  csvMappings: saved.csvMappings && typeof saved.csvMappings === "object" ? { ...saved.csvMappings } : null,
   sidebarHidden: Boolean(saved.sidebarHidden),
   sort: saved.sort === "descending" ? "descending" : "ascending",
   replacementRules: Array.isArray(saved.replacementRules) ? saved.replacementRules.filter((rule) => rule && typeof rule.find === "string" && typeof rule.replace === "string") : []
@@ -37,6 +48,7 @@ if (!saved.levelSelectionIncludesUnk) state.selectedLevels.add("UNK");
 const $ = (id) => document.getElementById(id);
 const els = {
   file: $("fileInput"), status: $("fileStatus"), search: $("searchInput"), case: $("caseToggle"), regex: $("regexToggle"), clear: $("clearSearch"), jumpMode: $("jumpMode"), filterMode: $("filterMode"), searchUp: $("searchUp"), searchDown: $("searchDown"), sidebarToggle: $("sidebarToggle"), sidebarResize: $("sidebarResize"), workbenchBody: document.querySelector(".workbench-body"),
+  inputMode: $("inputMode"), csvFields: $("csvFields"), csvTime: $("csvTimeColumn"), csvLevel: $("csvLevelColumn"), csvApp: $("csvAppColumn"), csvMessage: $("csvMessageColumn"), csvStatus: $("csvStatus"), textParserPanel: $("textParserPanel"),
   parserFields: $("parserFields"), parserDetection: $("parserDetection"), preset: $("parserPreset"), split: $("splitPattern"), time: $("timePattern"), level: $("levelPattern"), app: $("appPattern"), wrap: $("wrapToggle"), formatJson: $("formatJsonToggle"),
   error: $("patternError"), reparse: $("reparseButton"), parserConfig: $("parserConfig"), importParserConfig: $("importParserConfig"), copyParserConfig: $("copyParserConfig"), levelFilters: $("levelFilters"), applicationFilters: $("applicationFilters"), timeSortToggle: $("timeSortToggle"),
   replacementRules: $("replacementRules"), addReplacement: $("addReplacement"), applyReplacements: $("applyReplacements"),
@@ -45,6 +57,7 @@ const els = {
 let searchDebounceTimer = null;
 let layoutResizeTimer = null;
 let scrollFrame = null;
+let fileLoadId = 0;
 let parserController;
 const textMeasureContext = document.createElement("canvas").getContext("2d");
 textMeasureContext.font = '12px Consolas, "SFMono-Regular", Menlo, monospace';
@@ -55,6 +68,8 @@ function saveSettings() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       ...(parserController ? parserController.getSettings() : {}),
+      inputMode: state.inputMode,
+      csvMappings: state.csvMappings || {},
       wrap: els.wrap.checked,
       formatJson: els.formatJson.checked,
       selectedLevels: [...state.selectedLevels],
@@ -74,6 +89,8 @@ function saveSettings() {
 }
 
 function restoreSettings() {
+  els.inputMode.value = state.inputMode;
+  renderInputMode();
   els.wrap.checked = saved.wrap !== false;
   els.formatJson.checked = Boolean(saved.formatJson);
   els.viewport.classList.toggle("wrap-enabled", els.wrap.checked);
@@ -136,7 +153,7 @@ function applyReplacementRules() {
   try {
     els.error.textContent = "";
     saveSettings();
-    if (state.raw) parseRecords();
+    if (state.raw) state.inputMode === "csv" && state.csvRows.length ? applyCsvRows() : parseRecords();
   } catch (error) { els.error.textContent = error.message; }
 }
 
@@ -180,8 +197,111 @@ function renderReplacementRules() {
   els.replacementRules.replaceChildren(fragment);
 }
 
+function getCsvMappings() {
+  return { time: els.csvTime.value, level: els.csvLevel.value, app: els.csvApp.value, message: els.csvMessage.value };
+}
+
+function normalizeHeader(header) {
+  return String(header).trim().toLowerCase().replace(/[\s_-]+/g, ".").replace(/\.+/g, ".");
+}
+
+function detectCsvColumn(headers, role) {
+  const normalized = new Map(headers.map((header) => [normalizeHeader(header), header]));
+  return csvAliases[role].map((alias) => normalized.get(alias)).find(Boolean) || "";
+}
+
+function populateCsvSelect(select, headers, role) {
+  const preferred = state.csvMappings?.[role];
+  const fallback = role === "message" ? CSV_ENTIRE_ROW : "";
+  select.replaceChildren(new Option(role === "message" ? "(entire row)" : "(none)", fallback));
+  headers.forEach((header) => select.add(new Option(header || "(unnamed column)", header)));
+  select.value = preferred === fallback || headers.includes(preferred)
+    ? preferred
+    : detectCsvColumn(headers, role) || fallback;
+  select.disabled = !headers.length;
+}
+
+function setCsvStatus(message, kind = "") {
+  els.csvStatus.textContent = message;
+  els.csvStatus.className = `csv-status${kind ? ` ${kind}` : ""}`;
+}
+
+function populateCsvMappings(headers) {
+  populateCsvSelect(els.csvTime, headers, "time");
+  populateCsvSelect(els.csvLevel, headers, "level");
+  populateCsvSelect(els.csvApp, headers, "app");
+  populateCsvSelect(els.csvMessage, headers, "message");
+  if (headers.length) state.csvMappings = getCsvMappings();
+}
+
+function csvCell(value, fallback = "-") {
+  if (value === undefined || value === null || value === "") return fallback;
+  return typeof value === "string" ? value : String(value);
+}
+
+function normalizeLevel(value) {
+  const level = csvCell(value, "UNK").trim().toUpperCase();
+  const aliases = { WARNING: "WARN", ERR: "ERROR", CRITICAL: "FATAL", SEVERE: "FATAL" };
+  const normalized = aliases[level] || level;
+  return levels.includes(normalized) ? normalized : "UNK";
+}
+
+function csvRowText(row) {
+  return state.csvHeaders.map((header) => `${header}=${csvCell(row[header], "")}`).join(" | ");
+}
+
+function acceptRecords(records) {
+  state.records = records.map((record) => ({ ...record, message: replaceLogStrings(record.message) }));
+  populateApps();
+  updateVisible();
+}
+
+function applyCsvRows() {
+  const mappings = getCsvMappings();
+  acceptRecords(state.csvRows.map((row, index) => {
+    const raw = csvRowText(row);
+    return {
+      index: index + 1,
+      raw,
+      time: mappings.time ? csvCell(row[mappings.time]) : "-",
+      level: mappings.level ? normalizeLevel(row[mappings.level]) : "UNK",
+      app: mappings.app ? csvCell(row[mappings.app]) : "-",
+      message: mappings.message === CSV_ENTIRE_ROW ? raw : csvCell(row[mappings.message], "")
+    };
+  }));
+}
+
+function parseCsvRecords() {
+  const result = Papa.parse(state.raw, { header: true, skipEmptyLines: "greedy", dynamicTyping: false });
+  state.csvRows = result.data;
+  state.csvHeaders = result.meta.fields || [];
+  if (!state.csvHeaders.length) throw new Error("CSV does not contain a header row.");
+  populateCsvMappings(state.csvHeaders);
+  applyCsvRows();
+  const warnings = result.errors.length;
+  const oneColumn = state.csvHeaders.length === 1;
+  const details = `${state.csvRows.length.toLocaleString()} rows, ${state.csvHeaders.length.toLocaleString()} columns`;
+  if (oneColumn) setCsvStatus(`${details}. Only one column detected; switch to Text mode if this is a log file.`, "warning");
+  else if (warnings) setCsvStatus(`${details}. Papa Parse reported ${warnings.toLocaleString()} warning${warnings === 1 ? "" : "s"}.`, "warning");
+  else setCsvStatus(`${details}. Delimiter: ${result.meta.delimiter === "\t" ? "tab" : result.meta.delimiter}`);
+}
+
 function parseRecords() {
-  parserController.parse(state.raw);
+  els.error.textContent = "";
+  try {
+    if (state.inputMode === "csv") parseCsvRecords();
+    else parserController.parse(state.raw);
+  } catch (error) {
+    acceptRecords([]);
+    if (state.inputMode === "csv") setCsvStatus(error.message, "error");
+    else els.error.textContent = error.message;
+  }
+}
+
+function renderInputMode() {
+  const csv = state.inputMode === "csv";
+  els.csvFields.hidden = !csv;
+  els.textParserPanel.hidden = csv;
 }
 
 parserController = LogParser.createController({
@@ -193,11 +313,7 @@ parserController = LogParser.createController({
   },
   saved,
   getText: () => state.raw,
-  acceptRecords: (records) => {
-    state.records = records.map((record) => ({ ...record, message: replaceLogStrings(record.message) }));
-    populateApps();
-    updateVisible();
-  },
+  acceptRecords,
   settingsChanged: saveSettings
 });
 
@@ -538,9 +654,29 @@ function loadLog(text, name, size) {
 els.file.addEventListener("change", async ({ target }) => {
   const file = target.files[0];
   if (!file) return;
+  const loadId = ++fileLoadId;
+  target.value = "";
   els.status.textContent = `Reading ${file.name}...`;
-  try { loadLog(await file.text(), file.name, file.size); } catch (error) { els.error.textContent = error.message; }
+  try {
+    const text = await file.text();
+    if (loadId === fileLoadId) loadLog(text, file.name, file.size);
+  } catch (error) {
+    if (loadId !== fileLoadId) return;
+    if (state.inputMode === "csv") setCsvStatus(error.message, "error");
+    else els.error.textContent = error.message;
+  }
 });
+els.inputMode.addEventListener("change", () => {
+  state.inputMode = els.inputMode.value === "text" ? "text" : "csv";
+  renderInputMode();
+  saveSettings();
+  if (state.raw) parseRecords();
+});
+[els.csvTime, els.csvLevel, els.csvApp, els.csvMessage].forEach((select) => select.addEventListener("change", () => {
+  state.csvMappings = getCsvMappings();
+  saveSettings();
+  if (state.inputMode === "csv" && state.csvRows.length) applyCsvRows();
+}));
 els.addReplacement.addEventListener("click", () => {
   state.replacementRules.push({ find: "", replace: "" });
   renderReplacementRules();
@@ -623,5 +759,6 @@ document.querySelectorAll("[data-resize]").forEach((handle) => handle.addEventLi
 }));
 
 restoreSettings();
+populateCsvMappings([]);
 makeLevelFilters();
 renderReplacementRules();

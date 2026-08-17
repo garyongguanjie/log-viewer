@@ -11,7 +11,7 @@
     <header class="topbar">
       <a class="brand" href="#" aria-label="Logscope home">LOG VIEWER</a>
       <div class="file-status" id="fileStatus">No file loaded</div>
-      <label class="upload-button" for="fileInput">Open log <input id="fileInput" type="file" accept=".log,.txt,text/plain" /></label>
+      <label class="upload-button" for="fileInput">Open log <input id="fileInput" type="file" accept=".csv,.log,.txt,text/csv,text/plain" /></label>
     </header>
 
     <section class="workbench" aria-label="Log viewer controls">
@@ -42,21 +42,32 @@
             <div class="application-list" id="applicationFilters"><span class="application-placeholder">No applications</span></div>
           </section>
           <section class="sidebar-section parser-settings">
-            <div class="parser-heading"><h2 class="sidebar-heading">PARSER</h2><a href="parser-help.html" target="_blank" rel="noopener">Help</a></div>
-            <p>Time, level, and app use the first capture group. Message shows the complete split record.</p>
-            <label>Preset <select id="parserPreset"></select></label>
-            <span class="parser-detection" id="parserDetection" aria-live="polite"></span>
-            <fieldset class="parser-fields" id="parserFields">
-              <label>Split records <input id="splitPattern" value="\r?\n" spellcheck="false" /></label>
-              <label>Time <input id="timePattern" value="^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)" spellcheck="false" /></label>
-              <label>Level <input id="levelPattern" value="\b(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\b" spellcheck="false" /></label>
-              <label>App / logger <input id="appPattern" value="---\s+\[[^\]]+\]\s+([^\s:]+)\s*:" spellcheck="false" /></label>
-              <span class="pattern-error" id="patternError" role="alert"></span>
-              <button id="reparseButton" type="button">Apply parser</button>
-              <label class="config-label" for="parserConfig">Pasteable parser config</label>
-              <textarea id="parserConfig" class="parser-config" rows="5" spellcheck="false"></textarea>
-              <div class="config-actions"><button id="importParserConfig" type="button">Import &amp; apply</button><button id="copyParserConfig" type="button">Copy current</button></div>
+            <h2 class="sidebar-heading">INPUT FORMAT</h2>
+            <label>Mode <select id="inputMode"><option value="csv">CSV</option><option value="text">Text</option></select></label>
+            <fieldset class="parser-fields csv-fields" id="csvFields">
+              <label>Time <select id="csvTimeColumn"></select></label>
+              <label>Level <select id="csvLevelColumn"></select></label>
+              <label>App / logger <select id="csvAppColumn"></select></label>
+              <label>Message <select id="csvMessageColumn"></select></label>
+              <span class="csv-status" id="csvStatus" aria-live="polite">Open a CSV file to detect columns.</span>
             </fieldset>
+            <div class="text-parser-panel" id="textParserPanel" hidden>
+              <div class="parser-heading"><h2 class="sidebar-heading">TEXT PARSER</h2><a href="parser-help.html" target="_blank" rel="noopener">Help</a></div>
+              <p>Time, level, and app use the first capture group. Message shows the complete split record.</p>
+              <label>Preset <select id="parserPreset"></select></label>
+              <span class="parser-detection" id="parserDetection" aria-live="polite"></span>
+              <fieldset class="parser-fields" id="parserFields">
+                <label>Split records <input id="splitPattern" value="\r?\n" spellcheck="false" /></label>
+                <label>Time <input id="timePattern" value="^(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?)" spellcheck="false" /></label>
+                <label>Level <input id="levelPattern" value="\b(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\b" spellcheck="false" /></label>
+                <label>App / logger <input id="appPattern" value="---\s+\[[^\]]+\]\s+([^\s:]+)\s*:" spellcheck="false" /></label>
+                <span class="pattern-error" id="patternError" role="alert"></span>
+                <button id="reparseButton" type="button">Apply parser</button>
+                <label class="config-label" for="parserConfig">Pasteable parser config</label>
+                <textarea id="parserConfig" class="parser-config" rows="5" spellcheck="false"></textarea>
+                <div class="config-actions"><button id="importParserConfig" type="button">Import &amp; apply</button><button id="copyParserConfig" type="button">Copy current</button></div>
+              </fieldset>
+            </div>
             <label class="wrap-setting"><input id="wrapToggle" type="checkbox" checked /> Wrap message text</label>
             <label class="wrap-setting"><input id="formatJsonToggle" type="checkbox" /> Format embedded JSON</label>
           </section>
@@ -84,6 +95,7 @@
     </section>
   </main>
   <template id="rowTemplate"><div class="log-row"><span class="app-cell"></span><time class="time-cell"></time><span class="level-cell"></span><span class="message-cell"></span></div></template>
+  <script src="papaparse.js"></script>
   <script src="parser.js"></script>
   <script src="app.js"></script>
 </body>

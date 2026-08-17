@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { once } = require("events");
+const Papa = require("./papaparse.js");
 
 const outputs = [
   { name: "springboot-small.log", lines: 250 },
@@ -23,6 +24,7 @@ const applications = [
 
 const levels = ["INFO", "INFO", "INFO", "DEBUG", "DEBUG", "WARN", "ERROR", "TRACE"];
 const threads = ["main", "http-nio-8080-exec-1", "http-nio-8080-exec-7", "scheduling-1", "kafka-listener-0-C-1"];
+const services = ["orders-service", "payments-service", "inventory-service", "shipping-service", "users-service"];
 
 function timestamp(index) {
   const date = new Date(Date.UTC(2026, 7, 15, 9, 0, 0, index * 137));
@@ -90,7 +92,47 @@ async function writeLongLineLog({ name, lines, maximumLength }) {
   console.log(`${name}: ${lines.toLocaleString()} lines, ${(size / 1024 / 1024).toFixed(2)} MB`);
 }
 
+function csvMessage(index) {
+  if (index % 29 === 0) return `Multiline diagnostic for request ${index}\nConnection pool exhausted\nRetry scheduled in 5000ms`;
+  if (index % 23 === 0) return `Gateway replied "rate limited", retrying request ${index}`;
+  if (index % 19 === 0) return `Processed order ${index}, warehouse=eu-west-1, items=4`;
+  if (index % 17 === 0) return `payload={"requestId":"csv-${index}","status":"READY","items":[1,2,3]}`;
+  return message(index, levels[index % levels.length]);
+}
+
+function kibanaRows(count) {
+  return Array.from({ length: count }, (_, index) => ({
+    "@timestamp": new Date(Date.UTC(2026, 7, 15, 9, 0, 0, index * 137)).toISOString(),
+    "log.level": index % 13 === 0 ? "" : index % 31 === 0 ? "NOTICE" : levels[index % levels.length],
+    "service.name": services[index % services.length],
+    message: csvMessage(index)
+  }));
+}
+
+function writeCsv(name, rows, config = {}) {
+  const destination = path.join(outputDirectory, name);
+  fs.writeFileSync(destination, `${Papa.unparse(rows, config)}\n`, "utf8");
+  const size = fs.statSync(destination).size;
+  console.log(`${name}: ${rows.length.toLocaleString()} records, ${(size / 1024 / 1024).toFixed(2)} MB`);
+}
+
+function writeCsvSamples() {
+  writeCsv("kibana-standard.csv", kibanaRows(60));
+  writeCsv("kibana-large.csv", kibanaRows(10_000));
+  writeCsv("kibana-semicolon.csv", kibanaRows(30), { delimiter: ";" });
+  writeCsv("kibana-alternate-columns.csv", Array.from({ length: 40 }, (_, index) => ({
+    timestamp: new Date(Date.UTC(2026, 7, 16, 10, 0, 0, index * 251)).toISOString(),
+    severity: index % 9 === 0 ? "" : ["info", "warning", "err", "critical", "debug"][index % 5],
+    application: services[index % services.length],
+    "event.original": csvMessage(index)
+  })));
+}
+
 (async () => {
+  if (process.argv.includes("--csv")) {
+    writeCsvSamples();
+    return;
+  }
   const selectedOutputs = process.argv.includes("--long-lines") ? longLineOutputs : outputs;
   const writer = process.argv.includes("--long-lines") ? writeLongLineLog : writeLog;
   for (const output of selectedOutputs) await writer(output);
