@@ -1,8 +1,11 @@
 const ROW_HEIGHT = 42;
+const WRAPPED_LINE_HEIGHT = 16;
+const ROW_VERTICAL_SPACE = 20;
 const OVERSCAN = 12;
 const SEARCH_DEBOUNCE_MS = 50;
+const RESIZE_DEBOUNCE_MS = 80;
 const STORAGE_KEY = "log-viewer-settings-v1";
-const levels = ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"];
+const levels = ["UNK", "TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"];
 
 function readSettings() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
@@ -29,6 +32,7 @@ const state = {
   sort: saved.sort === "descending" ? "descending" : "ascending",
   replacementRules: Array.isArray(saved.replacementRules) ? saved.replacementRules.filter((rule) => rule && typeof rule.find === "string" && typeof rule.replace === "string") : []
 };
+if (!saved.levelSelectionIncludesUnk) state.selectedLevels.add("UNK");
 
 const $ = (id) => document.getElementById(id);
 const els = {
@@ -39,8 +43,11 @@ const els = {
   viewport: $("logViewport"), empty: $("emptyState"), space: $("virtualSpace"), rows: $("virtualRows"), count: $("resultCount"), template: $("rowTemplate")
 };
 let searchDebounceTimer = null;
+let layoutResizeTimer = null;
 let scrollFrame = null;
 let parserController;
+const textMeasureContext = document.createElement("canvas").getContext("2d");
+textMeasureContext.font = '12px Consolas, "SFMono-Regular", Menlo, monospace';
 
 function saveSettings() {
   const columnWidths = {};
@@ -52,6 +59,7 @@ function saveSettings() {
       formatJson: els.formatJson.checked,
       selectedLevels: [...state.selectedLevels],
       levelSelectionExplicit: true,
+      levelSelectionIncludesUnk: true,
       hiddenApplications: [...state.hiddenApplications],
       caseSensitive: state.caseSensitive,
       regexSearch: state.regexSearch,
@@ -394,17 +402,42 @@ function formatEmbeddedJson(message) {
 }
 
 function prepareLayout() {
+  const styles = getComputedStyle(els.viewport);
+  const fixedWidth = ["app", "time", "level"].reduce((width, name) => width + parseFloat(styles.getPropertyValue(`--${name}-width`)), 0);
+  const messageWidth = Math.max(1, els.viewport.clientWidth - fixedWidth - 20);
+  const wrapping = els.wrap.checked;
   let offset = 0;
   state.offsets = [0];
   state.visible.forEach((record) => {
     record.displayMessage = els.formatJson.checked ? formatEmbeddedJson(record.message) : record.message;
-    const displayLines = record.displayMessage.split("\n").length;
+    if (record.measuredMessage !== record.displayMessage) {
+      record.measuredMessage = record.displayMessage;
+      record.lineWidths = record.displayMessage.split("\n").map((line) => textMeasureContext.measureText(line.replace(/\t/g, "        ")).width);
+    }
+    const displayLines = wrapping
+      ? record.lineWidths.reduce((count, width) => count + Math.max(1, Math.ceil(width / messageWidth)), 0)
+      : 1;
     record.hasMultilineMessage = displayLines > 1;
-    record.rowHeight = record.hasMultilineMessage ? Math.max(72, displayLines * 16 + 20) : ROW_HEIGHT;
+    const measuredHeight = record.measuredRowWidth === messageWidth && record.measuredRowMessage === record.displayMessage
+      ? record.measuredRowHeight
+      : null;
+    record.rowHeight = measuredHeight || Math.max(ROW_HEIGHT, displayLines * WRAPPED_LINE_HEIGHT + ROW_VERTICAL_SPACE);
     offset += record.rowHeight;
     state.offsets.push(offset);
   });
   state.totalHeight = offset;
+  state.messageWidth = messageWidth;
+}
+
+function rebuildOffsets() {
+  let offset = 0;
+  state.offsets = [0];
+  state.visible.forEach((record) => {
+    offset += record.rowHeight;
+    state.offsets.push(offset);
+  });
+  state.totalHeight = offset;
+  els.space.style.height = `${state.totalHeight}px`;
 }
 
 function rowAtOffset(offset) {
@@ -418,7 +451,27 @@ function rowAtOffset(offset) {
   return Math.min(low, Math.max(0, state.visible.length - 1));
 }
 
-function renderRows(force = false) {
+function relayoutRows() {
+  const anchorIndex = state.visible.length ? rowAtOffset(els.viewport.scrollTop) : 0;
+  const anchorOffset = state.visible.length ? els.viewport.scrollTop - state.offsets[anchorIndex] : 0;
+  prepareLayout();
+  els.space.style.height = `${state.totalHeight}px`;
+  if (state.visible.length) {
+    const offsetWithinRow = Math.min(anchorOffset, Math.max(0, state.visible[anchorIndex].rowHeight - 1));
+    els.viewport.scrollTop = state.offsets[anchorIndex] + offsetWithinRow;
+  }
+  renderRows(true);
+}
+
+function scheduleRelayout() {
+  window.clearTimeout(layoutResizeTimer);
+  layoutResizeTimer = window.setTimeout(() => {
+    layoutResizeTimer = null;
+    relayoutRows();
+  }, RESIZE_DEBOUNCE_MS);
+}
+
+function renderRows(force = false, measurementPass = 0) {
   const start = Math.max(0, rowAtOffset(els.viewport.scrollTop) - OVERSCAN);
   const renderThrough = els.viewport.scrollTop + els.viewport.clientHeight + OVERSCAN * ROW_HEIGHT;
   let end = start;
@@ -442,11 +495,38 @@ function renderRows(force = false) {
     level.classList.add(`level-${record.level.toLowerCase()}`);
     const message = node.querySelector(".message-cell");
     message.classList.toggle("multiline-message", record.hasMultilineMessage);
-    message.innerHTML = highlight(record.displayMessage);
+    const content = document.createElement("span");
+    content.className = "message-content";
+    content.innerHTML = highlight(record.displayMessage);
+    message.append(content);
     node.title = record.raw;
     fragment.append(node);
   }
   els.rows.replaceChildren(fragment);
+  if (measurementPass < 3 && els.wrap.checked) {
+    let changed = false;
+    [...els.rows.children].forEach((node, renderedIndex) => {
+      const record = state.visible[start + renderedIndex];
+      const message = node.querySelector(".message-cell");
+      const content = message.querySelector(".message-content");
+      const styles = getComputedStyle(message);
+      const rowStyles = getComputedStyle(node);
+      const padding = parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom);
+      const borders = parseFloat(rowStyles.borderTopWidth) + parseFloat(rowStyles.borderBottomWidth);
+      const measuredHeight = Math.max(ROW_HEIGHT, Math.ceil(content.getBoundingClientRect().height + padding + borders));
+      record.measuredRowWidth = state.messageWidth;
+      record.measuredRowMessage = record.displayMessage;
+      record.measuredRowHeight = measuredHeight;
+      if (record.rowHeight !== measuredHeight) {
+        record.rowHeight = measuredHeight;
+        changed = true;
+      }
+    });
+    if (changed) {
+      rebuildOffsets();
+      renderRows(true, measurementPass + 1);
+    }
+  }
 }
 
 function loadLog(text, name, size) {
@@ -486,7 +566,7 @@ els.jumpMode.addEventListener("click", () => { state.searchMode = "jump"; saveSe
 els.filterMode.addEventListener("click", () => { state.searchMode = "filter"; saveSettings(); updateVisible(); });
 els.searchUp.addEventListener("click", () => jumpToMatch(-1));
 els.searchDown.addEventListener("click", () => jumpToMatch(1));
-els.sidebarToggle.addEventListener("click", () => { state.sidebarHidden = !state.sidebarHidden; renderSidebarState(); saveSettings(); renderRows(); });
+els.sidebarToggle.addEventListener("click", () => { state.sidebarHidden = !state.sidebarHidden; renderSidebarState(); saveSettings(); relayoutRows(); });
 els.sidebarResize.addEventListener("pointerdown", (event) => {
   event.preventDefault();
   const startX = event.clientX;
@@ -500,7 +580,7 @@ els.sidebarResize.addEventListener("pointerdown", (event) => {
     els.sidebarResize.removeEventListener("pointerup", finish);
     els.sidebarResize.removeEventListener("pointercancel", finish);
     saveSettings();
-    renderRows();
+    relayoutRows();
   };
   els.sidebarResize.addEventListener("pointermove", resize);
   els.sidebarResize.addEventListener("pointerup", finish);
@@ -511,16 +591,16 @@ els.sidebarResize.addEventListener("keydown", (event) => {
   event.preventDefault();
   const current = parseFloat(getComputedStyle(els.workbenchBody).getPropertyValue("--sidebar-width"));
   setSidebarWidth(current + (event.key === "ArrowRight" ? 10 : -10));
-  renderRows();
+  relayoutRows();
 });
 els.timeSortToggle.addEventListener("click", () => setSort(state.sort === "ascending" ? "descending" : "ascending"));
-els.wrap.addEventListener("change", () => { els.viewport.classList.toggle("wrap-enabled", els.wrap.checked); saveSettings(); });
+els.wrap.addEventListener("change", () => { els.viewport.classList.toggle("wrap-enabled", els.wrap.checked); saveSettings(); relayoutRows(); });
 els.formatJson.addEventListener("change", () => { saveSettings(); updateVisible(); });
 els.viewport.addEventListener("scroll", () => {
   if (scrollFrame !== null) return;
   scrollFrame = window.requestAnimationFrame(() => { scrollFrame = null; renderRows(); });
 }, { passive: true });
-window.addEventListener("resize", () => renderRows(true));
+new ResizeObserver(scheduleRelayout).observe(els.viewport);
 
 document.querySelectorAll("[data-resize]").forEach((handle) => handle.addEventListener("pointerdown", (event) => {
   event.preventDefault();
@@ -535,6 +615,7 @@ document.querySelectorAll("[data-resize]").forEach((handle) => handle.addEventLi
     handle.removeEventListener("pointerup", finish);
     handle.removeEventListener("pointercancel", finish);
     saveSettings();
+    relayoutRows();
   };
   handle.addEventListener("pointermove", resize);
   handle.addEventListener("pointerup", finish);

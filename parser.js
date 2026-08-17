@@ -92,7 +92,7 @@
       index: index + 1,
       raw,
       time: captured(extractors.time, raw),
-      level: captured(extractors.level, raw, "UNKNOWN").toUpperCase(),
+      level: captured(extractors.level, raw, "UNK").toUpperCase(),
       app: captured(extractors.app, raw),
       message: raw
     }));
@@ -166,8 +166,7 @@
     elements.preset.replaceChildren();
     elements.preset.add(new Option("Autodetect", "auto"));
     for (const [id, preset] of presets) elements.preset.add(new Option(preset.label, id));
-    elements.preset.add(new Option("Custom", "custom", false, false));
-    elements.preset.options[elements.preset.options.length - 1].disabled = true;
+    elements.preset.add(new Option("Custom", "custom"));
 
     if (saved.patterns) writePatterns(saved.patterns);
     const restoredPreset = matchingPreset(readPatterns());

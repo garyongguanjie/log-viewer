@@ -122,10 +122,12 @@ button { cursor: pointer; }
 .chip[data-level="WARN"].active { border-color: #8d6605; background: #fff3cd; color: #6f4f00; }
 .chip[data-level="ERROR"].active, .chip[data-level="FATAL"].active { border-color: #a52a15; background: #fce8e3; color: #8b1f0e; }
 .chip[data-level="TRACE"], .chip[data-level="DEBUG"] { border-color: #9aa3b2; color: #697386; }
+.chip[data-level="UNK"] { border-color: #9b7fc4; color: #75509d; }
 .chip[data-level="INFO"] { border-color: #6ca9dd; color: #0972d3; }
 .chip[data-level="WARN"] { border-color: #c6922f; color: #9b6500; }
 .chip[data-level="ERROR"], .chip[data-level="FATAL"] { border-color: #dc8068; color: #c4320a; }
 .chip[data-level="TRACE"].active, .chip[data-level="DEBUG"].active { border-color: #697386; background: #edf0f4; color: #4f5969; }
+.chip[data-level="UNK"].active { border-color: #7c3aed; background: #f3e8ff; color: #6b21a8; }
 .chip[data-level="INFO"].active { border-color: #0972d3; background: #e9f3fb; color: #075fae; }
 .chip[data-level="WARN"].active { border-color: #9b6500; background: #fff3cd; color: #7a5000; }
 .chip[data-level="ERROR"].active, .chip[data-level="FATAL"].active { border-color: #c4320a; background: #fce8e3; color: #a82a0a; }
@@ -146,21 +148,21 @@ button { cursor: pointer; }
 .log-row.alternate-row { background: #fbfcfd; }
 .log-row.current-match { background: #dceefb; box-shadow: inset 3px 0 0 var(--blue); }
 .log-row > * { overflow: hidden; padding: 0 10px; text-overflow: ellipsis; white-space: nowrap; }
+.app-cell, .time-cell { align-self: start; padding-top: 13px; }
 .app-cell { color: #006d77; }
 .time-cell { color: #4d5968; }
-.level-cell { font-size: 10px; font-weight: 700; }
-.level-info { color: #0972d3; }
-.level-debug, .level-trace { color: #697386; }
-.level-warn { color: #9b6500; }
-.level-error, .level-fatal { color: #c4320a; }
+.level-cell { align-self: start; justify-self: start; margin-top: 10px; margin-left: 10px; padding: 3px 8px; border: 1px solid; border-radius: 2px; font-size: 10px; font-weight: 700; line-height: normal; }
+.level-info { border-color: #0972d3; background: #e9f3fb; color: #075fae; }
+.level-debug, .level-trace { border-color: #697386; background: #edf0f4; color: #4f5969; }
+.level-unk { border-color: #7c3aed; background: #f3e8ff; color: #6b21a8; }
+.level-warn { border-color: #9b6500; background: #fff3cd; color: #7a5000; }
+.level-error, .level-fatal { border-color: #c4320a; background: #fce8e3; color: #a82a0a; }
 .message-cell { color: #1f2933; }
 mark { padding: 1px 0; background: #fff2b2; color: inherit; }
 .log-table.wrap-enabled { overflow-x: hidden; }
 .log-table.wrap-enabled .table-head, .log-table.wrap-enabled .log-row { width: 100%; min-width: 0; grid-template-columns: var(--app-width) var(--time-width) var(--level-width) minmax(0, 1fr); }
-.log-table.wrap-enabled .message-cell { display: -webkit-box; overflow-wrap: anywhere; word-break: break-word; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-height: 16px; }
-.log-row.has-multiline-message { align-items: stretch; }
-.log-row.has-multiline-message > *:not(.message-cell) { padding-top: 13px; }
-.log-table .message-cell.multiline-message { display: block; overflow: visible; padding-top: 8px; padding-bottom: 8px; overflow-wrap: anywhere; white-space: pre-wrap; line-height: 16px; }
+.log-table.wrap-enabled .message-cell { align-self: stretch; padding-top: 8px; padding-bottom: 8px; overflow-wrap: anywhere; word-break: break-all; white-space: pre-wrap; line-height: 16px; }
+.message-content { display: block; }
 .empty-state { display: grid; min-height: 280px; place-content: center; color: var(--muted); text-align: center; }
 .empty-state[hidden] { display: none; }
 

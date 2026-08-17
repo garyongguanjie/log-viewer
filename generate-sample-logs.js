@@ -7,6 +7,11 @@ const outputs = [
   { name: "springboot-medium.log", lines: 10_000 },
   { name: "springboot-large.log", lines: 100_000 }
 ];
+const longLineOutputs = [
+  { name: "springboot-long-lines.log", lines: 24, maximumLength: 32_768 },
+  { name: "springboot-long-lines-large.log", lines: 2_500, maximumLength: 8_192 }
+];
+const outputDirectory = path.join(__dirname, "sample_logs");
 
 const applications = [
   "com.example.orders.OrderService",
@@ -41,7 +46,7 @@ function message(index, level) {
 }
 
 async function writeLog({ name, lines }) {
-  const destination = path.join(__dirname, name);
+  const destination = path.join(outputDirectory, name);
   const stream = fs.createWriteStream(destination, { encoding: "utf8" });
 
   for (let index = 0; index < lines; index += 1) {
@@ -59,8 +64,36 @@ async function writeLog({ name, lines }) {
   console.log(`${name}: ${lines.toLocaleString()} lines, ${(size / 1024 / 1024).toFixed(2)} MB`);
 }
 
+function longMessage(index, maximumLength) {
+  const lengths = [512, 2_048, maximumLength];
+  const length = lengths[index % lengths.length];
+  if (index % 3 === 0) return `unbrokenToken=${"X".repeat(length)}`;
+  if (index % 3 === 1) return `wrappedWords=${"long-log-value ".repeat(Math.ceil(length / 15)).slice(0, length)}`;
+  return `payload={"requestId":"stress-${index}","description":"${"J".repeat(length)}","status":"READY","retryable":false}`;
+}
+
+async function writeLongLineLog({ name, lines, maximumLength }) {
+  const destination = path.join(outputDirectory, name);
+  const stream = fs.createWriteStream(destination, { encoding: "utf8" });
+
+  for (let index = 0; index < lines; index += 1) {
+    const level = levels[index % levels.length];
+    const app = applications[index % applications.length];
+    const thread = threads[index % threads.length];
+    const line = `${timestamp(index)} ${level.padStart(5, " ")} 18420 --- [${thread}] ${app} : ${longMessage(index, maximumLength)}\n`;
+    if (!stream.write(line)) await once(stream, "drain");
+  }
+
+  stream.end();
+  await once(stream, "finish");
+  const size = fs.statSync(destination).size;
+  console.log(`${name}: ${lines.toLocaleString()} lines, ${(size / 1024 / 1024).toFixed(2)} MB`);
+}
+
 (async () => {
-  for (const output of outputs) await writeLog(output);
+  const selectedOutputs = process.argv.includes("--long-lines") ? longLineOutputs : outputs;
+  const writer = process.argv.includes("--long-lines") ? writeLongLineLog : writeLog;
+  for (const output of selectedOutputs) await writer(output);
 })().catch((error) => {
   console.error(error);
   process.exitCode = 1;
