@@ -148,9 +148,9 @@ button { cursor: pointer; }
 .resize-handle::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 1px; background: #8796a5; }
 .resize-handle:hover::after, .resize-handle:active::after { width: 2px; background: var(--blue); }
 
-.virtual-space { position: relative; }
-.virtual-rows { position: absolute; inset: 0 0 auto; }
-.log-row { height: 42px; position: absolute; top: 0; left: 0; right: 0; border-bottom: 1px solid #e7ebef; font: 12px Consolas, "SFMono-Regular", Menlo, monospace; }
+.virtual-space, .virtual-rows, .log-cluster { position: relative; }
+.log-cluster { overflow: hidden; }
+.log-row { min-height: 42px; border-bottom: 1px solid #e7ebef; font: 12px Consolas, "SFMono-Regular", Menlo, monospace; }
 .log-row.alternate-row { background: #fbfcfd; }
 .log-row.current-match { background: #dceefb; box-shadow: inset 3px 0 0 var(--blue); }
 .log-row > * { overflow: hidden; padding: 0 10px; text-overflow: ellipsis; white-space: nowrap; }

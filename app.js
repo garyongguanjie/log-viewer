@@ -1,7 +1,8 @@
 const ROW_HEIGHT = 42;
-const WRAPPED_LINE_HEIGHT = 16;
-const ROW_VERTICAL_SPACE = 20;
-const OVERSCAN = 12;
+const CLUSTER_SIZE = 50;
+const INITIAL_CLUSTER_COUNT = 3;
+const CLUSTER_OVERSCAN = 1;
+const MAX_ESTIMATED_CLUSTER_HEIGHT = CLUSTER_SIZE * ROW_HEIGHT * 3;
 const SEARCH_DEBOUNCE_MS = 50;
 const RESIZE_DEBOUNCE_MS = 80;
 const STORAGE_KEY = "log-viewer-settings-v1";
@@ -23,10 +24,11 @@ const state = {
   raw: "",
   records: [],
   visible: [],
-  offsets: [0],
+  clusters: [],
+  clusterOffsets: [0],
+  estimatedClusterHeight: CLUSTER_SIZE * ROW_HEIGHT,
   totalHeight: 0,
-  renderedStart: -1,
-  renderedEnd: -1,
+  renderedClusters: new Set(),
   matches: [],
   currentMatch: -1,
   selectedLevels: new Set(saved.levelSelectionExplicit && Array.isArray(saved.selectedLevels) ? saved.selectedLevels : (Array.isArray(saved.selectedLevels) && saved.selectedLevels.length ? saved.selectedLevels : levels)),
@@ -59,8 +61,6 @@ let layoutResizeTimer = null;
 let scrollFrame = null;
 let fileLoadId = 0;
 let parserController;
-const textMeasureContext = document.createElement("canvas").getContext("2d");
-textMeasureContext.font = '12px Consolas, "SFMono-Regular", Menlo, monospace';
 
 function saveSettings() {
   const columnWidths = {};
@@ -346,11 +346,12 @@ function updateVisible() {
   if (state.searchMode === "jump" && state.search) {
     state.visible.forEach((record, index) => { if (searchMatches(record)) state.matches.push(index); });
   }
-  state.currentMatch = state.matches.length ? 0 : -1;
+  state.currentMatch = -1;
   els.viewport.scrollTop = 0;
+  prepareClusters();
   renderMeta();
   renderSearchMode();
-  renderRows(true);
+  renderInitialClusters();
 }
 
 function populateApps() {
@@ -392,7 +393,6 @@ function populateApps() {
 function renderMeta() {
   const total = state.records.length;
   const hasVisible = state.visible.length > 0;
-  prepareLayout();
   if (state.searchMode === "jump" && state.search) {
     const current = state.currentMatch >= 0 ? state.currentMatch + 1 : 0;
     els.count.textContent = `${current} / ${state.matches.length.toLocaleString()} matches`;
@@ -401,7 +401,6 @@ function renderMeta() {
   }
   els.empty.hidden = true;
   els.space.hidden = !hasVisible;
-  els.space.style.height = `${state.totalHeight}px`;
 }
 
 function renderSortState() {
@@ -421,11 +420,12 @@ function renderSearchMode() {
 
 function jumpToMatch(step) {
   if (state.searchMode !== "jump" || !state.matches.length) return;
-  state.currentMatch = (state.currentMatch + step + state.matches.length) % state.matches.length;
+  state.currentMatch = state.currentMatch < 0
+    ? (step < 0 ? state.matches.length - 1 : 0)
+    : (state.currentMatch + step + state.matches.length) % state.matches.length;
   const rowIndex = state.matches[state.currentMatch];
-  els.viewport.scrollTop = Math.max(0, state.offsets[rowIndex] - Math.floor(els.viewport.clientHeight / 2));
   renderMeta();
-  renderRows(true);
+  jumpToRow(rowIndex);
 }
 
 function renderSidebarState() {
@@ -517,66 +517,152 @@ function formatEmbeddedJson(message) {
   return message;
 }
 
-function prepareLayout() {
-  const styles = getComputedStyle(els.viewport);
-  const fixedWidth = ["app", "time", "level"].reduce((width, name) => width + parseFloat(styles.getPropertyValue(`--${name}-width`)), 0);
-  const messageWidth = Math.max(1, els.viewport.clientWidth - fixedWidth - 20);
-  const wrapping = els.wrap.checked;
-  let offset = 0;
-  state.offsets = [0];
-  state.visible.forEach((record) => {
-    record.displayMessage = els.formatJson.checked ? formatEmbeddedJson(record.message) : record.message;
-    if (record.measuredMessage !== record.displayMessage) {
-      record.measuredMessage = record.displayMessage;
-      record.lineWidths = record.displayMessage.split("\n").map((line) => textMeasureContext.measureText(line.replace(/\t/g, "        ")).width);
-    }
-    const displayLines = wrapping
-      ? record.lineWidths.reduce((count, width) => count + Math.max(1, Math.ceil(width / messageWidth)), 0)
-      : 1;
-    record.hasMultilineMessage = displayLines > 1;
-    const measuredHeight = record.measuredRowWidth === messageWidth && record.measuredRowMessage === record.displayMessage
-      ? record.measuredRowHeight
-      : null;
-    record.rowHeight = measuredHeight || Math.max(ROW_HEIGHT, displayLines * WRAPPED_LINE_HEIGHT + ROW_VERTICAL_SPACE);
-    offset += record.rowHeight;
-    state.offsets.push(offset);
-  });
-  state.totalHeight = offset;
-  state.messageWidth = messageWidth;
+function clusterHeight(cluster) {
+  if (cluster.measuredHeight !== null) return cluster.measuredHeight;
+  return state.estimatedClusterHeight * (cluster.end - cluster.start) / CLUSTER_SIZE;
 }
 
-function rebuildOffsets() {
+function rebuildClusterOffsets() {
   let offset = 0;
-  state.offsets = [0];
-  state.visible.forEach((record) => {
-    offset += record.rowHeight;
-    state.offsets.push(offset);
+  state.clusterOffsets = [0];
+  state.clusters.forEach((cluster) => {
+    const height = clusterHeight(cluster);
+    cluster.node.style.height = `${height}px`;
+    offset += height;
+    state.clusterOffsets.push(offset);
   });
   state.totalHeight = offset;
-  els.space.style.height = `${state.totalHeight}px`;
 }
 
-function rowAtOffset(offset) {
+function clusterAtOffset(offset) {
   let low = 0;
-  let high = state.visible.length;
+  let high = state.clusters.length;
   while (low < high) {
     const middle = Math.floor((low + high + 1) / 2);
-    if (state.offsets[middle] <= offset) low = middle;
+    if (state.clusterOffsets[middle] <= offset) low = middle;
     else high = middle - 1;
   }
-  return Math.min(low, Math.max(0, state.visible.length - 1));
+  return Math.min(low, Math.max(0, state.clusters.length - 1));
+}
+
+function prepareClusters() {
+  state.estimatedClusterHeight = CLUSTER_SIZE * ROW_HEIGHT;
+  state.renderedClusters = new Set();
+  state.clusters = [];
+  const fragment = document.createDocumentFragment();
+  for (let start = 0, index = 0; start < state.visible.length; start += CLUSTER_SIZE, index += 1) {
+    const node = document.createElement("div");
+    node.className = "log-cluster";
+    node.dataset.cluster = index;
+    const cluster = { index, start, end: Math.min(start + CLUSTER_SIZE, state.visible.length), measuredHeight: null, node };
+    state.clusters.push(cluster);
+    fragment.append(node);
+  }
+  els.rows.replaceChildren(fragment);
+  rebuildClusterOffsets();
+}
+
+function createRow(rowIndex) {
+  const record = state.visible[rowIndex];
+  const displayMessage = els.formatJson.checked ? formatEmbeddedJson(record.message) : record.message;
+  const multiline = displayMessage.includes("\n");
+  const node = els.template.content.firstElementChild.cloneNode(true);
+  node.dataset.row = rowIndex;
+  node.classList.toggle("alternate-row", rowIndex % 2 === 1);
+  node.classList.toggle("has-multiline-message", multiline);
+  node.classList.toggle("current-match", state.searchMode === "jump" && state.matches[state.currentMatch] === rowIndex);
+  node.querySelector(".app-cell").innerHTML = highlight(record.app);
+  node.querySelector(".time-cell").innerHTML = highlight(record.time);
+  const level = node.querySelector(".level-cell");
+  level.textContent = record.level;
+  level.classList.add(`level-${record.level.toLowerCase()}`);
+  const message = node.querySelector(".message-cell");
+  message.classList.toggle("multiline-message", multiline);
+  const content = document.createElement("span");
+  content.className = "message-content";
+  content.innerHTML = highlight(displayMessage);
+  message.append(content);
+  node.title = record.raw;
+  return node;
+}
+
+function renderCluster(cluster) {
+  if (cluster.node.childElementCount) return false;
+  const fragment = document.createDocumentFragment();
+  for (let rowIndex = cluster.start; rowIndex < cluster.end; rowIndex += 1) fragment.append(createRow(rowIndex));
+  if (cluster.measuredHeight === null) cluster.node.style.height = "auto";
+  cluster.node.append(fragment);
+  return cluster.measuredHeight === null;
+}
+
+function updateClusterEstimate() {
+  const samples = state.clusters.filter((cluster) => cluster.measuredHeight !== null);
+  if (!samples.length) return;
+  state.estimatedClusterHeight = samples.reduce((sum, cluster) => {
+    const normalizedHeight = cluster.measuredHeight * CLUSTER_SIZE / (cluster.end - cluster.start);
+    return sum + Math.min(normalizedHeight, MAX_ESTIMATED_CLUSTER_HEIGHT);
+  }, 0) / samples.length;
+}
+
+function syncRenderedClusters(indices, preserveScroll = true) {
+  if (!state.clusters.length) return;
+  const localScroll = Math.max(0, els.viewport.scrollTop - els.space.offsetTop);
+  const anchorCluster = clusterAtOffset(localScroll);
+  const anchorOffset = localScroll - state.clusterOffsets[anchorCluster];
+  const desired = new Set(indices.filter((index) => index >= 0 && index < state.clusters.length));
+  state.renderedClusters.forEach((index) => {
+    if (!desired.has(index)) state.clusters[index].node.replaceChildren();
+  });
+  const newlyMeasured = [];
+  desired.forEach((index) => {
+    const cluster = state.clusters[index];
+    if (renderCluster(cluster)) newlyMeasured.push(cluster);
+  });
+  newlyMeasured.forEach((cluster) => {
+    cluster.measuredHeight = Math.max(1, Math.ceil(cluster.node.getBoundingClientRect().height));
+  });
+  if (newlyMeasured.length) updateClusterEstimate();
+  state.renderedClusters = desired;
+  rebuildClusterOffsets();
+  if (preserveScroll) els.viewport.scrollTop = els.space.offsetTop + state.clusterOffsets[anchorCluster] + anchorOffset;
+}
+
+function renderInitialClusters() {
+  const count = Math.min(INITIAL_CLUSTER_COUNT, state.clusters.length);
+  syncRenderedClusters(Array.from({ length: count }, (_, index) => index), false);
+}
+
+function renderClustersForViewport() {
+  if (!state.clusters.length) return;
+  const top = Math.max(0, els.viewport.scrollTop - els.space.offsetTop);
+  const bottom = top + els.viewport.clientHeight;
+  const first = Math.max(0, clusterAtOffset(top) - CLUSTER_OVERSCAN);
+  const last = Math.min(state.clusters.length - 1, clusterAtOffset(bottom) + CLUSTER_OVERSCAN);
+  const indices = Array.from({ length: last - first + 1 }, (_, offset) => first + offset);
+  if (indices.length === state.renderedClusters.size && indices.every((index) => state.renderedClusters.has(index))) return;
+  syncRenderedClusters(indices);
+}
+
+function jumpToRow(rowIndex) {
+  const clusterIndex = Math.floor(rowIndex / CLUSTER_SIZE);
+  const first = Math.max(0, clusterIndex - CLUSTER_OVERSCAN);
+  const last = Math.min(state.clusters.length - 1, clusterIndex + CLUSTER_OVERSCAN);
+  syncRenderedClusters(Array.from({ length: last - first + 1 }, (_, offset) => first + offset), false);
+  const row = state.clusters[clusterIndex].node.querySelector(`[data-row="${rowIndex}"]`);
+  if (!row) return;
+  const viewportRect = els.viewport.getBoundingClientRect();
+  const rowRect = row.getBoundingClientRect();
+  const centeredDelta = rowRect.top - viewportRect.top - (els.viewport.clientHeight - rowRect.height) / 2;
+  els.viewport.scrollTop = Math.max(0, els.viewport.scrollTop + centeredDelta);
 }
 
 function relayoutRows() {
-  const anchorIndex = state.visible.length ? rowAtOffset(els.viewport.scrollTop) : 0;
-  const anchorOffset = state.visible.length ? els.viewport.scrollTop - state.offsets[anchorIndex] : 0;
-  prepareLayout();
-  els.space.style.height = `${state.totalHeight}px`;
-  if (state.visible.length) {
-    const offsetWithinRow = Math.min(anchorOffset, Math.max(0, state.visible[anchorIndex].rowHeight - 1));
-    els.viewport.scrollTop = state.offsets[anchorIndex] + offsetWithinRow;
-  }
-  renderRows(true);
+  if (!state.clusters.length) return;
+  const localScroll = Math.max(0, els.viewport.scrollTop - els.space.offsetTop);
+  const oldCluster = clusterAtOffset(localScroll);
+  const rowIndex = Math.min(state.visible.length - 1, state.clusters[oldCluster].start + Math.floor((localScroll - state.clusterOffsets[oldCluster]) / ROW_HEIGHT));
+  prepareClusters();
+  jumpToRow(rowIndex);
 }
 
 function scheduleRelayout() {
@@ -585,64 +671,6 @@ function scheduleRelayout() {
     layoutResizeTimer = null;
     relayoutRows();
   }, RESIZE_DEBOUNCE_MS);
-}
-
-function renderRows(force = false, measurementPass = 0) {
-  const start = Math.max(0, rowAtOffset(els.viewport.scrollTop) - OVERSCAN);
-  const renderThrough = els.viewport.scrollTop + els.viewport.clientHeight + OVERSCAN * ROW_HEIGHT;
-  let end = start;
-  while (end < state.visible.length && state.offsets[end] < renderThrough) end += 1;
-  if (!force && start === state.renderedStart && end === state.renderedEnd) return;
-  state.renderedStart = start;
-  state.renderedEnd = end;
-  const fragment = document.createDocumentFragment();
-  for (let i = start; i < end; i += 1) {
-    const record = state.visible[i];
-    const node = els.template.content.firstElementChild.cloneNode(true);
-    node.style.transform = `translateY(${state.offsets[i]}px)`;
-    node.style.height = `${record.rowHeight}px`;
-    node.classList.toggle("alternate-row", i % 2 === 1);
-    node.classList.toggle("has-multiline-message", record.hasMultilineMessage);
-    node.classList.toggle("current-match", state.searchMode === "jump" && state.matches[state.currentMatch] === i);
-    node.querySelector(".app-cell").innerHTML = highlight(record.app);
-    node.querySelector(".time-cell").innerHTML = highlight(record.time);
-    const level = node.querySelector(".level-cell");
-    level.textContent = record.level;
-    level.classList.add(`level-${record.level.toLowerCase()}`);
-    const message = node.querySelector(".message-cell");
-    message.classList.toggle("multiline-message", record.hasMultilineMessage);
-    const content = document.createElement("span");
-    content.className = "message-content";
-    content.innerHTML = highlight(record.displayMessage);
-    message.append(content);
-    node.title = record.raw;
-    fragment.append(node);
-  }
-  els.rows.replaceChildren(fragment);
-  if (measurementPass < 3 && els.wrap.checked) {
-    let changed = false;
-    [...els.rows.children].forEach((node, renderedIndex) => {
-      const record = state.visible[start + renderedIndex];
-      const message = node.querySelector(".message-cell");
-      const content = message.querySelector(".message-content");
-      const styles = getComputedStyle(message);
-      const rowStyles = getComputedStyle(node);
-      const padding = parseFloat(styles.paddingTop) + parseFloat(styles.paddingBottom);
-      const borders = parseFloat(rowStyles.borderTopWidth) + parseFloat(rowStyles.borderBottomWidth);
-      const measuredHeight = Math.max(ROW_HEIGHT, Math.ceil(content.getBoundingClientRect().height + padding + borders));
-      record.measuredRowWidth = state.messageWidth;
-      record.measuredRowMessage = record.displayMessage;
-      record.measuredRowHeight = measuredHeight;
-      if (record.rowHeight !== measuredHeight) {
-        record.rowHeight = measuredHeight;
-        changed = true;
-      }
-    });
-    if (changed) {
-      rebuildOffsets();
-      renderRows(true, measurementPass + 1);
-    }
-  }
 }
 
 function loadLog(text, name, size) {
@@ -734,7 +762,7 @@ els.wrap.addEventListener("change", () => { els.viewport.classList.toggle("wrap-
 els.formatJson.addEventListener("change", () => { saveSettings(); updateVisible(); });
 els.viewport.addEventListener("scroll", () => {
   if (scrollFrame !== null) return;
-  scrollFrame = window.requestAnimationFrame(() => { scrollFrame = null; renderRows(); });
+  scrollFrame = window.requestAnimationFrame(() => { scrollFrame = null; renderClustersForViewport(); });
 }, { passive: true });
 new ResizeObserver(scheduleRelayout).observe(els.viewport);
 
